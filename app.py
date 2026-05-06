@@ -199,26 +199,125 @@ with st.sidebar:
     st.caption("O coloca `dataset.csv` / `dataset.xlsx` junto a `app.py`.")
 
     st.markdown("---")
-    st.markdown("**💾 Copia de seguridad**")
-    st.caption("En Streamlit Cloud los datos se pierden al reiniciar.")
+    st.markdown("**💾 Datos persistentes**")
 
-    if st.button("📤 Exportar datos", use_container_width=True):
-        buf = io.BytesIO()
-        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-            if USERS_FILE.exists(): zf.write(USERS_FILE, "users.json")
-            for f in DATA_DIR.glob("user_*.json"): zf.write(f, f.name)
-        buf.seek(0)
-        st.download_button("⬇️ Descargar backup.zip", buf.getvalue(),
-                           "recetas_backup.zip", "application/zip",
-                           use_container_width=True)
+    # ── GitHub sync (auto-persists across deploys) ─────────────────────────
+    try:
+        gh_token = st.secrets.get("GITHUB_TOKEN", "")
+        gh_repo  = st.secrets.get("GITHUB_REPO", "")   # "usuario/repo"
+        gh_branch= st.secrets.get("GITHUB_BRANCH", "main")
+    except Exception:
+        gh_token = gh_repo = gh_branch = ""
 
-    rzip = st.file_uploader("📥 Restaurar backup", type=["zip"], key="restore_zip")
-    if rzip:
-        with zipfile.ZipFile(io.BytesIO(rzip.read())) as zf:
-            for name in zf.namelist():
-                (DATA_DIR / name).write_bytes(zf.read(name))
-        for k in ("current_user","user_data"): st.session_state.pop(k, None)
-        st.success("✓ Datos restaurados."); st.rerun()
+    def gh_save_all():
+        """Push all data JSONs to GitHub data/ folder."""
+        if not gh_token or not gh_repo:
+            return False
+        import base64, urllib.request, urllib.error
+        files_to_push = []
+        if USERS_FILE.exists():
+            files_to_push.append(("data/users.json", USERS_FILE.read_bytes()))
+        for f in DATA_DIR.glob("user_*.json"):
+            files_to_push.append((f"data/{f.name}", f.read_bytes()))
+
+        headers = {"Authorization": f"token {gh_token}",
+                   "Content-Type": "application/json"}
+        api = f"https://api.github.com/repos/{gh_repo}/contents/"
+
+        for path, content in files_to_push:
+            # Get current SHA if file exists (needed for update)
+            sha = None
+            try:
+                req = urllib.request.Request(api + path, headers=headers)
+                with urllib.request.urlopen(req) as r:
+                    sha = json.loads(r.read())["sha"]
+            except urllib.error.HTTPError:
+                pass  # file doesn't exist yet, that's fine
+
+            payload = json.dumps({
+                "message": "recetas: sync data",
+                "content": base64.b64encode(content).decode(),
+                "branch": gh_branch,
+                **({"sha": sha} if sha else {})
+            }).encode()
+            try:
+                req = urllib.request.Request(api + path, data=payload,
+                                             headers=headers, method="PUT")
+                urllib.request.urlopen(req)
+            except Exception:
+                return False
+        return True
+
+    def gh_load_all():
+        """Pull all data JSONs from GitHub data/ folder."""
+        if not gh_token or not gh_repo:
+            return False
+        import base64, urllib.request, urllib.error
+        headers = {"Authorization": f"token {gh_token}"}
+        api = f"https://api.github.com/repos/{gh_repo}/contents/data?ref={gh_branch}"
+        try:
+            req = urllib.request.Request(api, headers=headers)
+            with urllib.request.urlopen(req) as r:
+                files = json.loads(r.read())
+        except Exception:
+            return False
+
+        DATA_DIR.mkdir(exist_ok=True)
+        for entry in files:
+            if not entry["name"].endswith(".json"): continue
+            try:
+                req = urllib.request.Request(entry["download_url"], headers=headers)
+                with urllib.request.urlopen(req) as r:
+                    (DATA_DIR / entry["name"]).write_bytes(r.read())
+            except Exception:
+                continue
+        return True
+
+    if gh_token and gh_repo:
+        st.caption(f"🔗 Sincronización GitHub activa · `{gh_repo}`")
+        gc1, gc2 = st.columns(2)
+        with gc1:
+            if st.button("☁️ Guardar en GitHub", use_container_width=True):
+                with st.spinner("Guardando…"):
+                    ok = gh_save_all()
+                st.success("✓ Guardado en GitHub") if ok else st.error("Error al guardar")
+        with gc2:
+            if st.button("⬇️ Cargar desde GitHub", use_container_width=True):
+                with st.spinner("Cargando…"):
+                    ok = gh_load_all()
+                if ok:
+                    for k in ("current_user","user_data"): st.session_state.pop(k,None)
+                    st.success("✓ Datos cargados"); st.rerun()
+                else:
+                    st.error("Error al cargar")
+        # Auto-load on first run if data dir is empty
+        if not any(DATA_DIR.glob("*.json")):
+            with st.spinner("Recuperando datos de GitHub…"):
+                if gh_load_all():
+                    for k in ("current_user","user_data"): st.session_state.pop(k,None)
+                    st.rerun()
+    else:
+        st.caption("Configura GitHub en secrets.toml para persistencia automática. "
+                   "O usa el backup manual:")
+
+    # ── Manual ZIP backup (always available) ──────────────────────────────
+    with st.expander("📦 Backup manual (ZIP)"):
+        if st.button("📤 Exportar", use_container_width=True):
+            buf = io.BytesIO()
+            with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                if USERS_FILE.exists(): zf.write(USERS_FILE, "users.json")
+                for f in DATA_DIR.glob("user_*.json"): zf.write(f, f.name)
+            buf.seek(0)
+            st.download_button("⬇️ Descargar backup.zip", buf.getvalue(),
+                               "recetas_backup.zip", "application/zip",
+                               use_container_width=True)
+        rzip = st.file_uploader("📥 Restaurar", type=["zip"], key="restore_zip")
+        if rzip:
+            with zipfile.ZipFile(io.BytesIO(rzip.read())) as zf:
+                for name in zf.namelist():
+                    (DATA_DIR / name).write_bytes(zf.read(name))
+            for k in ("current_user","user_data"): st.session_state.pop(k,None)
+            st.success("✓ Restaurado"); st.rerun()
 
 if not dataset_path:
     for c in ["dataset.csv","dataset.xlsx"]:
@@ -678,7 +777,7 @@ with tab2:
     if min_r > 0:
         filt = filt[filt["valoracion_media"] >= min_r]
 
-    hidden_count = len(set(ud().get("hidden",[])) & set(filt["titulo"]))
+    hidden_count = len(set(ud().get("hidden",[])) & set(filt["titulo"].tolist())) if not filt.empty else 0
     st.caption(f"**{len(filt):,}** recetas encontradas"
                + (f" · {hidden_count} ocultas" if hidden_count and not show_hidden else ""))
     recipe_grid(filt, "exp", hide_hidden=not show_hidden)
