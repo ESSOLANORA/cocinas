@@ -511,55 +511,163 @@ def show_recipe_grid(subset: pd.DataFrame, key_prefix: str):
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 2 — EXPLORAR
 # ══════════════════════════════════════════════════════════════════════════════
+
+def expand_by_text(text: str, canon_list: list) -> list:
+    """
+    Dado un texto libre (ej: "aceite"), devuelve todos los ingredientes canónicos
+    que contienen esa palabra. Útil para seleccionar de golpe "aceite de oliva",
+    "aceite de girasol", etc.
+    """
+    t = text.strip().lower()
+    if not t:
+        return []
+    return [c for c in canon_list if t in c]
+
+
 with tab2:
     st.subheader("🔍 Explorar Recetas")
 
     with st.expander("🎛️ Filtros", expanded=True):
+
+        # ── Fila 1: nombre, categorías (multi), dificultad (multi) ─────────────
         r1a, r1b, r1c = st.columns([2, 3, 2])
         with r1a:
-            search_text = st.text_input("🔎 Nombre", placeholder="paella, tortilla…", key="exp_name")
+            search_text = st.text_input("🔎 Nombre receta", placeholder="paella, tortilla…",
+                                        key="exp_name")
         with r1b:
-            cats_inc = st.multiselect("📂 Categorías", sorted(df["categoria"].unique()),
-                                      placeholder="Todas", key="exp_cats")
+            cats_inc = st.multiselect(
+                "📂 Categorías",
+                sorted(df["categoria"].unique()),
+                placeholder="Todas — escribe para filtrar",
+                key="exp_cats",
+            )
         with r1c:
-            dif_sel = st.selectbox("💪 Dificultad",
-                                   ["Todas"] + sorted(df["dificultad"].unique()), key="exp_dif")
+            difs_inc = st.multiselect(
+                "💪 Dificultad",
+                sorted(df["dificultad"].unique()),
+                placeholder="Todas",
+                key="exp_difs",
+            )
 
-        r2a, r2b = st.columns(2)
-        with r2a:
-            ing_inc = st.multiselect("✅ Ingredientes QUIERO", canon_list,
-                                     placeholder="Escribe para buscar…", key="exp_inc")
-        with r2b:
-            ing_exc = st.multiselect("🚫 Ingredientes NO quiero", canon_list,
-                                     placeholder="Escribe para buscar…", key="exp_exc")
+        # ── Fila 2: ingredientes QUIERO ────────────────────────────────────────
+        st.markdown("**✅ Ingredientes que QUIERO**")
+        ri2a, ri2b, ri2c = st.columns([3, 2, 2])
+        with ri2a:
+            # Text search that expands to matching canonical ingredients
+            inc_text = st.text_input(
+                "Buscar por palabra (selecciona uno o varios del desplegable)",
+                placeholder="escribe 'aceite' → aparecen todos los tipos…",
+                key="exp_inc_text",
+            )
+            inc_suggestions = expand_by_text(inc_text, canon_list) if inc_text else canon_list
+            ing_inc = st.multiselect(
+                "Seleccionar ingredientes",
+                options=inc_suggestions,
+                placeholder="Escribe arriba para filtrar la lista…",
+                key="exp_inc",
+            )
+        with ri2b:
+            # Quick import from a saved list
+            my_lists = list(ud().get("ing_lists", {}).keys())
+            if my_lists:
+                import_inc_list = st.selectbox(
+                    "O importar desde Mis Listas",
+                    ["— ninguna —"] + my_lists,
+                    key="exp_inc_listsel",
+                )
+                if import_inc_list != "— ninguna —":
+                    list_ings = ud()["ing_lists"].get(import_inc_list, [])
+                    st.caption(f"{len(list_ings)} ingredientes en «{import_inc_list}»")
+            else:
+                import_inc_list = "— ninguna —"
+                st.caption("(Crea listas en 🧺 Mis Listas)")
+        with ri2c:
+            logic = st.radio(
+                "Lógica incluir",
+                ["OR — alguno de estos", "AND — todos estos"],
+                horizontal=False,
+                key="exp_logic",
+            )
 
-        r3a, r3b, r3c = st.columns([2, 2, 2])
-        with r3a:
-            logic = st.radio("Lógica", ["OR — alguno", "AND — todos"],
-                             horizontal=True, key="exp_logic", disabled=not ing_inc)
-        with r3b:
-            max_t = st.select_slider("⏱️ Tiempo máx.", [15,30,45,60,90,120,999], value=999,
-                                     format_func=lambda x: "Sin límite" if x==999 else f"{x}m",
-                                     key="exp_time")
-        with r3c:
+        # ── Fila 3: ingredientes NO QUIERO ─────────────────────────────────────
+        st.markdown("**🚫 Ingredientes que NO quiero**")
+        re3a, re3b, _ = st.columns([3, 2, 2])
+        with re3a:
+            exc_text = st.text_input(
+                "Buscar por palabra",
+                placeholder="escribe 'gluten' → aparecen harina, pan…",
+                key="exp_exc_text",
+            )
+            exc_suggestions = expand_by_text(exc_text, canon_list) if exc_text else canon_list
+            ing_exc = st.multiselect(
+                "Seleccionar ingredientes a excluir",
+                options=exc_suggestions,
+                placeholder="Escribe arriba para filtrar…",
+                key="exp_exc",
+            )
+        with re3b:
+            my_lists = list(ud().get("ing_lists", {}).keys())
+            if my_lists:
+                import_exc_list = st.selectbox(
+                    "O importar desde Mis Listas",
+                    ["— ninguna —"] + my_lists,
+                    key="exp_exc_listsel",
+                )
+            else:
+                import_exc_list = "— ninguna —"
+
+        # ── Fila 4: tiempo y valoración ────────────────────────────────────────
+        r4a, r4b = st.columns(2)
+        with r4a:
+            max_t = st.select_slider(
+                "⏱️ Tiempo máx.",
+                [15, 30, 45, 60, 90, 120, 999], value=999,
+                format_func=lambda x: "Sin límite" if x == 999 else f"{x} min",
+                key="exp_time",
+            )
+        with r4b:
             min_r = st.slider("⭐ Valoración mín.", 0.0, 5.0, 0.0, 0.5, key="exp_rat")
 
+    # ── Resolver set final de ingredientes (manual + lista importada) ──────────
+    ing_lists_data = ud().get("ing_lists", {})
+
+    # Includes: union of manually selected + imported list (expanded by text if word)
+    inc_final: set = set(ing_inc)
+    if import_inc_list != "— ninguna —":
+        for raw in ing_lists_data.get(import_inc_list, []):
+            # Each item in the list is already a canonical token; expand by substring too
+            inc_final.update(expand_by_text(raw, canon_list) or [raw])
+
+    # Excludes: union of manually selected + imported list
+    exc_final: set = set(ing_exc)
+    if import_exc_list != "— ninguna —":
+        for raw in ing_lists_data.get(import_exc_list, []):
+            exc_final.update(expand_by_text(raw, canon_list) or [raw])
+
+    # Show resolved badge counts
+    if inc_final or exc_final:
+        badge_parts = []
+        if inc_final:
+            badge_parts.append(f"✅ {len(inc_final)} ingredientes incluidos")
+        if exc_final:
+            badge_parts.append(f"🚫 {len(exc_final)} ingredientes excluidos")
+        st.caption(" · ".join(badge_parts))
+
+    # ── Aplicar filtros ────────────────────────────────────────────────────────
     filt = df.copy()
     if search_text:
         filt = filt[filt["titulo"].str.contains(search_text, case=False, na=False)]
     if cats_inc:
         filt = filt[filt["categoria"].isin(cats_inc)]
-    if dif_sel != "Todas":
-        filt = filt[filt["dificultad"] == dif_sel]
-    if ing_inc:
-        inc_s = set(ing_inc)
+    if difs_inc:
+        filt = filt[filt["dificultad"].isin(difs_inc)]
+    if inc_final:
         if "AND" in logic:
-            filt = filt[filt["_ctokens"].apply(lambda t: inc_s.issubset(set(t)))]
+            filt = filt[filt["_ctokens"].apply(lambda t: inc_final.issubset(set(t)))]
         else:
-            filt = filt[filt["_ctokens"].apply(lambda t: bool(inc_s & set(t)))]
-    if ing_exc:
-        exc_s = set(ing_exc)
-        filt = filt[filt["_ctokens"].apply(lambda t: not bool(exc_s & set(t)))]
+            filt = filt[filt["_ctokens"].apply(lambda t: bool(inc_final & set(t)))]
+    if exc_final:
+        filt = filt[filt["_ctokens"].apply(lambda t: not bool(exc_final & set(t)))]
     if max_t < 999:
         filt = filt[filt["tiempo_total"].apply(time_to_min) <= max_t]
     if min_r > 0:
