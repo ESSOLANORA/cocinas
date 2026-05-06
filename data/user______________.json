@@ -1,0 +1,28 @@
+{
+  "planner": {
+    "Lunes": [
+      {
+        "titulo": "Receta de Potaje de vigilia de la abuela",
+        "meal": "🌙 Cena",
+        "comensales": 4,
+        "ingredientes": "350 gramos de garbanzos | 200 gramos de espinacas | 4 trozos de bacalao | 1 cebolla | 2 dientes de ajos | 2 huevos | 1 cucharada postre de pimentón dulce | 2 patatas | 1 chorro de aceite de oliva | 1 pizca de sal"
+      }
+    ],
+    "Martes": [],
+    "Miércoles": [],
+    "Jueves": [],
+    "Viernes": [],
+    "Sábado": [],
+    "Domingo": []
+  },
+  "history": [],
+  "favorites": [
+    "Receta de Paella valenciana de pollo y verduras",
+    "Receta de Potaje de vigilia de la abuela"
+  ],
+  "hidden": [],
+  "ratings": {},
+  "notes": {},
+  "tags": {},
+  "ing_lists": {}
+}
