@@ -6,6 +6,8 @@ import streamlit as st
 import pandas as pd
 import re
 import json
+import zipfile
+import io
 from pathlib import Path
 from collections import Counter
 
@@ -230,6 +232,40 @@ with st.sidebar:
         st.success(f"✓ {uploaded.name}")
     st.caption("O coloca `dataset.csv` / `dataset.xlsx` junto a `app.py`.")
 
+    st.markdown("---")
+    st.markdown("**💾 Copia de seguridad**")
+    st.caption("En Streamlit Cloud los datos se pierden al reiniciar. Exporta y restaura aquí.")
+
+    # Export all user data as ZIP
+    if st.button("📤 Exportar datos", use_container_width=True):
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            if USERS_FILE.exists():
+                zf.write(USERS_FILE, "users.json")
+            for f in DATA_DIR.glob("user_*.json"):
+                zf.write(f, f.name)
+        buf.seek(0)
+        st.download_button(
+            "⬇️ Descargar backup.zip",
+            buf.getvalue(),
+            file_name="recetas_backup.zip",
+            mime="application/zip",
+            use_container_width=True,
+        )
+
+    # Restore from ZIP
+    restore_zip = st.file_uploader("📥 Restaurar desde backup", type=["zip"], key="restore_zip")
+    if restore_zip:
+        with zipfile.ZipFile(io.BytesIO(restore_zip.read())) as zf:
+            for name in zf.namelist():
+                target = DATA_DIR / name
+                target.write_bytes(zf.read(name))
+        # Clear caches so data reloads
+        st.session_state.pop("current_user", None)
+        st.session_state.pop("user_data", None)
+        st.success("✓ Datos restaurados correctamente.")
+        st.rerun()
+
 if not dataset_path:
     for c in ["dataset.csv", "dataset.xlsx"]:
         if Path(c).exists():
@@ -282,6 +318,27 @@ with hcol3:
             f'<span class="profile-name">{sel}</span></div>',
             unsafe_allow_html=True,
         )
+        if st.button("🗑️ Eliminar perfil", key="del_user", help=f"Eliminar perfil de {sel}"):
+            st.session_state["confirm_delete_user"] = sel
+
+if st.session_state.get("confirm_delete_user") == sel and sel in users:
+    st.warning(f"⚠️ ¿Eliminar el perfil **{sel}** y todos sus datos? Esta acción no se puede deshacer.")
+    cd1, cd2, _ = st.columns([1, 1, 4])
+    with cd1:
+        if st.button("Sí, eliminar", type="primary", key="confirm_del"):
+            del users[sel]
+            save_users(users)
+            ufile = user_file(sel)
+            if ufile.exists():
+                ufile.unlink()
+            st.session_state.pop("confirm_delete_user", None)
+            st.session_state.pop("current_user", None)
+            st.session_state.pop("user_data", None)
+            st.rerun()
+    with cd2:
+        if st.button("Cancelar", key="cancel_del"):
+            st.session_state.pop("confirm_delete_user", None)
+            st.rerun()
 
 # ── Create new profile ─────────────────────────────────────────────────────────
 if sel == "＋ Nuevo perfil":
@@ -936,11 +993,14 @@ with tab6:
             return r.head(max_r) if not r.empty else df.sample(min(max_r, len(df)))
 
         def to_txt(sub, mx=25):
-            return "\n".join(
-                f"- {r['titulo']} | {r['categoria']} | {r['tiempo_total']} | "
-                f"Ingredientes: {r['ingredientes'][:160]}"
-                for _, r in sub.head(mx).iterrows()
-            )
+            lines = []
+            for _, r in sub.head(mx).iterrows():
+                ing = str(r.get("ingredientes", "") or "")[:160]
+                lines.append(
+                    f"- {r.get('titulo','?')} | {r.get('categoria','?')} | "
+                    f"{r.get('tiempo_total','?')} | Ingredientes: {ing}"
+                )
+            return "\n".join(lines)
 
         if mode == "🥬 Tengo estos ingredientes, ¿qué cocino?":
             kws = [w.strip() for w in user_input.replace(",", " ").split() if len(w.strip()) > 2]
@@ -954,8 +1014,10 @@ with tab6:
                 "qué ingredientes extra necesita, tiempo. Responde en español."
             )
         elif mode == "📅 Generar menú semanal equilibrado":
-            muestra = df.groupby("categoria", group_keys=False).apply(
-                lambda g: g.sample(min(6, len(g)))).reset_index(drop=True)
+            muestra = pd.concat([
+                g.sample(min(6, len(g)))
+                for _, g in df.groupby("categoria", group_keys=False)
+            ]).reset_index(drop=True)
             prompt = (
                 "Eres nutricionista y chef. SOLO puedes usar estas recetas reales. "
                 "NO inventes recetas fuera de la lista.\n\n"
