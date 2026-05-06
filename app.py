@@ -721,10 +721,10 @@ with tab4:
                     st.warning("Escribe un nombre.")
 
     if not ing_lists:
-        st.stop()
-
-    # ── Mostrar listas ─────────────────────────────────────────────────────────
-    for list_name, list_ings in list(ing_lists.items()):
+        st.info("Crea tu primera lista con el botón de arriba.")
+    else:
+      # ── Mostrar listas ───────────────────────────────────────────────────────
+      for list_name, list_ings in list(ing_lists.items()):
         st.markdown(f'<div class="list-card"><span class="list-title">🧺 {list_name}</span></div>',
                     unsafe_allow_html=True)
 
@@ -732,7 +732,6 @@ with tab4:
 
         # Edit ingredients
         with st.expander(f"Editar ingredientes de «{list_name}»"):
-            # Add ingredient
             ia, ib = st.columns([4, 1])
             with ia:
                 new_ing = st.selectbox(
@@ -749,7 +748,6 @@ with tab4:
                         ud()["ing_lists"] = ing_lists
                         save_ud(); st.rerun()
 
-            # Current ingredients with remove buttons
             if list_ings:
                 st.markdown("**Ingredientes actuales:**")
                 rows = [list_ings[i:i+4] for i in range(0, len(list_ings), 4)]
@@ -765,14 +763,13 @@ with tab4:
             else:
                 st.caption("Lista vacía. Añade ingredientes arriba.")
 
-            # Delete list
             st.markdown("---")
             if st.button(f"🗑️ Eliminar lista «{list_name}»", key=f"li_del_{lk}"):
                 del ing_lists[list_name]
                 ud()["ing_lists"] = ing_lists
                 save_ud(); st.rerun()
 
-        # ── Buscar recetas con esta lista ──────────────────────────────────────
+        # ── Buscar recetas con esta lista ────────────────────────────────────
         if list_ings:
             st.markdown(f"**Buscar recetas con «{list_name}»**")
             extra_allowed = st.slider(
@@ -784,14 +781,13 @@ with tab4:
             )
 
             list_set = set(list_ings)
+            _ea = extra_allowed  # capture for closure
 
-            def match_recipe(ctokens: list) -> bool:
+            def match_recipe(ctokens: list, _ls=list_set, _ea=_ea) -> bool:
                 recipe_set = set(ctokens)
-                # ingredients in recipe NOT in the list
-                extras = recipe_set - list_set
-                # must contain at least one list ingredient
-                has_any = bool(recipe_set & list_set)
-                return has_any and len(extras) <= extra_allowed
+                extras = recipe_set - _ls
+                has_any = bool(recipe_set & _ls)
+                return has_any and len(extras) <= _ea
 
             matched = df[df["_ctokens"].apply(match_recipe)]
             st.caption(
