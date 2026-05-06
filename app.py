@@ -810,14 +810,37 @@ with tab3:
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 4 — MIS LISTAS
 # ══════════════════════════════════════════════════════════════════════════════
+
+def parse_text_list(text: str, canon_list: list) -> tuple:
+    """
+    Dado un texto libre con ingredientes separados por comas (ej: "Plátano, Piña, Pera"),
+    devuelve:
+      - resolved: lista de ingredientes canónicos que coinciden (por substring)
+      - not_found: términos que no han tenido ninguna coincidencia
+    Acepta variantes: "plátano" matchea "plátano macho", "plátano verde", etc.
+    """
+    terms = [t.strip().lower() for t in re.split(r"[,\n]+", text) if t.strip()]
+    resolved, not_found = [], []
+    for term in terms:
+        matches = [c for c in canon_list if term in c or c in term]
+        if matches:
+            for m in matches:
+                if m not in resolved:
+                    resolved.append(m)
+        else:
+            not_found.append(term)
+    return resolved, not_found
+
+
 with tab4:
     st.subheader("🧺 Mis Listas de Ingredientes")
+    st.caption("Pega una lista de ingredientes separados por comas y la app busca todas sus variantes automáticamente.")
 
     ing_lists = ud().get("ing_lists",{})
 
     with st.expander("➕ Nueva lista", expanded=not ing_lists):
         lna, lnb = st.columns([3,1])
-        with lna: new_list_name = st.text_input("Nombre", placeholder="Nevera, Bebé…", key="nl_nm")
+        with lna: new_list_name = st.text_input("Nombre de la lista", placeholder="Frutas, Nevera, Bebé…", key="nl_nm")
         with lnb:
             st.write(""); st.write("")
             if st.button("Crear", type="primary", key="nl_cr"):
@@ -831,38 +854,84 @@ with tab4:
         st.info("Crea tu primera lista arriba.")
     else:
         for list_name, list_ings in list(ing_lists.items()):
-            lk = list_name.replace(" ","_")
-            st.markdown(f'<div class="lcard"><b>🧺 {list_name}</b></div>', unsafe_allow_html=True)
+            lk = re.sub(r"[^\w]", "_", list_name)  # safe key, full name
+            st.markdown(f'<div class="lcard"><b>🧺 {list_name}</b> · {len(list_ings)} ingredientes</div>',
+                        unsafe_allow_html=True)
 
             with st.expander(f"Editar «{list_name}»"):
-                # Text expand + multiselect
+
+                # ── Pegar lista de texto libre ─────────────────────────────
+                st.markdown("**Opción 1 — Pegar lista de texto**")
+                paste_text = st.text_area(
+                    "Pega ingredientes separados por comas",
+                    placeholder="Plátano, Piña, Pera, Naranja, Fresa, Manzana…\n\nAcepta variantes: 'plátano' también añade 'plátano macho', 'plátano verde', etc.",
+                    height=100,
+                    key=f"lpaste_{lk}"
+                )
+                if st.button("🔍 Resolver y previsualizar", key=f"lpreview_{lk}") and paste_text.strip():
+                    resolved, not_found = parse_text_list(paste_text, canon_list)
+                    new_ones = [r for r in resolved if r not in list_ings]
+                    st.session_state[f"_preview_{lk}"] = (new_ones, not_found)
+
+                if f"_preview_{lk}" in st.session_state:
+                    new_ones, not_found = st.session_state[f"_preview_{lk}"]
+                    if new_ones:
+                        st.success(f"✓ {len(new_ones)} ingredientes encontrados con sus variantes")
+                        # Show as multiselect so user can deselect unwanted
+                        confirmed = st.multiselect(
+                            "Confirmar qué añadir (desmarca los que no quieras)",
+                            options=new_ones,
+                            default=new_ones,
+                            key=f"lconfirm_{lk}"
+                        )
+                        if st.button(f"➕ Añadir {len(confirmed)} a la lista", key=f"laddconfirm_{lk}",
+                                     type="primary"):
+                            ing_lists[list_name].extend(confirmed)
+                            ud()["ing_lists"] = ing_lists; save_ud()
+                            st.session_state.pop(f"_preview_{lk}", None); st.rerun()
+                    if not_found:
+                        st.warning(f"No encontrados en el dataset: {', '.join(not_found)}")
+
+                st.markdown("---")
+
+                # ── Búsqueda por palabra individual ───────────────────────
+                st.markdown("**Opción 2 — Buscar por palabra**")
                 le1, le2 = st.columns([3,1])
                 with le1:
-                    add_txt = st.text_input("Buscar por palabra",
+                    add_txt = st.text_input("Escribe una palabra",
                                             placeholder="'aceite' → muestra todos los tipos…",
                                             key=f"ladd_txt_{lk}")
-                    opts = [i for i in (expand_by_text(add_txt,canon_list) if add_txt else canon_list)
+                    opts = [i for i in (expand_by_text(add_txt, canon_list) if add_txt else canon_list)
                             if i not in list_ings]
                     new_ing = st.multiselect("Seleccionar para añadir", opts,
                                              placeholder="Escribe para filtrar…",
                                              key=f"ladd_sel_{lk}")
                 with le2:
                     st.write(""); st.write("")
-                    if st.button("Añadir selección", key=f"ladd_btn_{lk}") and new_ing:
+                    if st.button("Añadir", key=f"ladd_btn_{lk}") and new_ing:
                         ing_lists[list_name].extend([i for i in new_ing if i not in list_ings])
                         ud()["ing_lists"] = ing_lists; save_ud(); st.rerun()
 
+                st.markdown("---")
+
+                # ── Ingredientes actuales ──────────────────────────────────
                 if list_ings:
-                    st.markdown("**Ingredientes actuales:**")
-                    chunks = [list_ings[i:i+4] for i in range(0,len(list_ings),4)]
+                    st.markdown(f"**Ingredientes actuales ({len(list_ings)}):**")
+                    # Use index as part of key to avoid duplicate key errors
+                    chunks = [list(enumerate(list_ings))[i:i+4]
+                              for i in range(0, len(list_ings), 4)]
                     for chunk in chunks:
                         rcols = st.columns(len(chunk))
-                        for ci, ing in enumerate(chunk):
+                        for ci, (orig_idx, ing) in enumerate(chunk):
                             with rcols[ci]:
-                                if st.button(f"✕ {ing}", key=f"lrm_{lk}_{ing[:12]}",
+                                if st.button(f"✕ {ing}",
+                                             key=f"lrm_{lk}_{orig_idx}",
                                              use_container_width=True):
-                                    ing_lists[list_name].remove(ing)
+                                    ing_lists[list_name].pop(orig_idx)
                                     ud()["ing_lists"] = ing_lists; save_ud(); st.rerun()
+                    if st.button("🗑️ Vaciar lista", key=f"lempty_{lk}"):
+                        ing_lists[list_name] = []
+                        ud()["ing_lists"] = ing_lists; save_ud(); st.rerun()
                 else:
                     st.caption("Lista vacía.")
 
@@ -870,6 +939,7 @@ with tab4:
                 if st.button(f"🗑️ Eliminar lista «{list_name}»", key=f"ldel_{lk}"):
                     del ing_lists[list_name]; ud()["ing_lists"] = ing_lists; save_ud(); st.rerun()
 
+            # ── Buscar recetas ─────────────────────────────────────────────
             if list_ings:
                 st.markdown(f"**Buscar recetas con «{list_name}»**")
                 extra = st.slider("Ingredientes extra permitidos",
@@ -877,7 +947,7 @@ with tab4:
                 ls = set(list_ings)
                 _ea = extra
                 matched = df[df["_ct"].apply(
-                    lambda t, _ls=ls, _e=_ea: bool(set(t)&_ls) and len(set(t)-_ls)<=_e
+                    lambda t, _ls=ls, _e=_ea: bool(set(t) & _ls) and len(set(t) - _ls) <= _e
                 )]
                 st.caption(f"{'🎯 Exacto' if extra==0 else f'+{extra} ingrediente(s) extra'} · "
                            f"**{len(matched):,} recetas**")
