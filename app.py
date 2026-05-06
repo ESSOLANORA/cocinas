@@ -1,115 +1,91 @@
 """
-Planificador de Recetas — app.py
-Multi-usuario · Favoritos · Listas de ingredientes · Filtro exacto/+N
+Planificador de Recetas
+Multi-usuario · Favoritos · No deseadas · Notas · Valoración personal
+Etiquetas · Escalar recetas · Historial · Listas · Filtro exacto/+N · IA Groq
 """
 import streamlit as st
 import pandas as pd
-import re
-import json
-import zipfile
-import io
+import re, json, zipfile, io
 from pathlib import Path
 from collections import Counter
+from datetime import date
 
 # ══════════════════════════════════════════════════════════════════════════════
-# CONFIG
+# CONFIG & CONSTANTES
 # ══════════════════════════════════════════════════════════════════════════════
-st.set_page_config(
-    page_title="🍽️ Planificador de Recetas",
-    page_icon="🍽️",
-    layout="wide",
-    initial_sidebar_state="collapsed",
-)
+st.set_page_config(page_title="🍽️ Recetas", page_icon="🍽️",
+                   layout="wide", initial_sidebar_state="collapsed")
 
 DATA_DIR   = Path("data")
 USERS_FILE = DATA_DIR / "users.json"
 DATA_DIR.mkdir(exist_ok=True)
 
-DIAS       = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
-MEAL_SLOTS = ["🌅 Desayuno", "☀️ Comida", "🌙 Cena"]
+DIAS       = ["Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"]
+MEAL_SLOTS = ["🌅 Desayuno","☀️ Comida","🌙 Cena"]
 AVATARS    = ["👤","👨","👩","👦","👧","🧑","👴","👵","🧔","👶",
               "🐱","🐶","🦊","🐻","🐼","🐨","🦁","🐯","🐸","🦄"]
+STAR_LABELS = ["","⭐","⭐⭐","⭐⭐⭐","⭐⭐⭐⭐","⭐⭐⭐⭐⭐"]
 
 # ── CSS ────────────────────────────────────────────────────────────────────────
-st.markdown("""
-<style>
-[data-testid="stAppViewContainer"] { padding-top: 0.5rem; }
-.main .block-container { padding: 0.5rem 1.2rem 2rem; max-width: 980px; }
-[data-testid="stTabs"] button { font-size: 0.82rem; padding: 0.35rem 0.7rem; }
-
-.profile-bar {
-    display:flex; align-items:center; gap:10px;
-    background:#f0f4ff; border-radius:10px;
-    padding:0.5rem 1rem; margin-bottom:1rem;
-}
-.profile-name { font-weight:700; font-size:1rem; color:#1a1a2e; }
-
-.recipe-badge {
-    display:inline-block; background:#e8f4fd; color:#1565c0;
-    border-radius:6px; padding:2px 8px; font-size:0.7rem;
-    margin-right:3px; margin-top:3px;
-}
-.fav-badge {
-    display:inline-block; background:#fff3cd; color:#856404;
-    border-radius:6px; padding:2px 8px; font-size:0.7rem;
-}
-.day-header {
-    background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);
-    color:white; padding:0.45rem 0.7rem;
-    border-radius:8px 8px 0 0; font-weight:600; font-size:0.85rem;
-}
-.day-box {
-    border:1px solid #e0e0e0; border-top:none;
-    border-radius:0 0 8px 8px; padding:0.5rem;
-    min-height:75px; background:white; margin-bottom:0.4rem;
-}
-.planned-recipe {
-    background:#f0fdf4; border:1px solid #86efac;
-    border-radius:5px; padding:3px 7px;
-    font-size:0.75rem; margin:2px 0; color:#166534;
-}
-.list-card {
-    background:#f8f9fa; border:1px solid #dee2e6;
-    border-radius:10px; padding:0.8rem; margin-bottom:0.6rem;
-}
-.list-title { font-weight:700; font-size:0.95rem; color:#1a1a2e; }
-.shop-cat { font-weight:700; color:#7c3aed; margin-top:0.8rem; font-size:0.88rem; }
-.stars { color:#f59e0b; font-size:0.82rem; }
-footer { visibility:hidden; }
-</style>
-""", unsafe_allow_html=True)
+st.markdown("""<style>
+[data-testid="stAppViewContainer"]{padding-top:.4rem}
+.main .block-container{padding:.4rem 1.1rem 2rem;max-width:990px}
+[data-testid="stTabs"] button{font-size:.8rem;padding:.3rem .65rem}
+.rb{display:inline-block;background:#e8f4fd;color:#1565c0;border-radius:6px;
+    padding:2px 7px;font-size:.68rem;margin-right:3px;margin-top:3px}
+.rb-tag{background:#fce7f3;color:#9d174d}
+.rb-no{background:#fee2e2;color:#991b1b}
+.rb-my{background:#dcfce7;color:#166534}
+.day-header{background:linear-gradient(135deg,#667eea,#764ba2);color:white;
+    padding:.4rem .65rem;border-radius:8px 8px 0 0;font-weight:600;font-size:.83rem}
+.day-box{border:1px solid #e0e0e0;border-top:none;border-radius:0 0 8px 8px;
+    padding:.5rem;min-height:70px;background:white;margin-bottom:.35rem}
+.pr{background:#f0fdf4;border:1px solid #86efac;border-radius:5px;
+    padding:3px 6px;font-size:.73rem;margin:2px 0;color:#166534}
+.lcard{background:#f8f9fa;border:1px solid #dee2e6;border-radius:10px;padding:.75rem;margin-bottom:.5rem}
+.shopcat{font-weight:700;color:#7c3aed;margin-top:.7rem;font-size:.86rem}
+.stars{color:#f59e0b;font-size:.8rem}
+footer{visibility:hidden}
+</style>""", unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
-# GESTIÓN DE USUARIOS (JSON)
+# USER DATA HELPERS
 # ══════════════════════════════════════════════════════════════════════════════
 def load_users() -> dict:
-    if USERS_FILE.exists():
-        return json.loads(USERS_FILE.read_text(encoding="utf-8"))
-    return {}
+    return json.loads(USERS_FILE.read_text("utf-8")) if USERS_FILE.exists() else {}
 
-def save_users(users: dict):
-    USERS_FILE.write_text(json.dumps(users, ensure_ascii=False, indent=2), encoding="utf-8")
+def save_users(u: dict):
+    USERS_FILE.write_text(json.dumps(u, ensure_ascii=False, indent=2), "utf-8")
 
-def user_file(username: str) -> Path:
-    safe = re.sub(r"[^\w\-]", "_", username.lower())
-    return DATA_DIR / f"user_{safe}.json"
+def user_file(name: str) -> Path:
+    return DATA_DIR / f"user_{re.sub(r'[^\\w-]','_',name.lower())}.json"
 
-def load_user_data(username: str) -> dict:
-    f = user_file(username)
-    if f.exists():
-        return json.loads(f.read_text(encoding="utf-8"))
+def empty_user() -> dict:
     return {
-        "planner":    {d: [] for d in DIAS},
-        "favorites":  [],           # list of recipe titles
-        "ing_lists":  {},           # {"Nevera": ["pollo","arroz",...], ...}
+        "planner":   {d: [] for d in DIAS},
+        "history":   [],          # [{"week":"2024-W01","days":{...}}]
+        "favorites": [],          # [titulo]
+        "hidden":    [],          # [titulo] — recetas no deseadas
+        "ratings":   {},          # {titulo: 1-5}
+        "notes":     {},          # {titulo: "texto"}
+        "tags":      {},          # {titulo: ["#rapida","#bebe"]}
+        "ing_lists": {},          # {nombre: [canon_ing]}
     }
 
-def save_user_data(username: str, data: dict):
-    user_file(username).write_text(
-        json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+def load_user_data(name: str) -> dict:
+    f = user_file(name)
+    if not f.exists():
+        return empty_user()
+    data = json.loads(f.read_text("utf-8"))
+    # backfill missing keys for old profiles
+    base = empty_user()
+    for k, v in base.items():
+        data.setdefault(k, v)
+    return data
 
-# shortcut helpers on session state
+def save_user_data(name: str, data: dict):
+    user_file(name).write_text(json.dumps(data, ensure_ascii=False, indent=2), "utf-8")
+
 def ud() -> dict:
     return st.session_state.user_data
 
@@ -125,9 +101,7 @@ _UNIT_RE = re.compile(
     r"vaso[s]?|copa[s]?|lata[s]?|unidad[es]?|pieza[s]?|trozo[s]?|rama[s]?|"
     r"manojo[s]?|pizca[s]?|chorro[s]?|puñado[s]?|rebanada[s]?|centímetro[s]?|"
     r"diente[s]?|paquete[s]?|sobre[s]?|pellizco[s]?|atado[s]?|cabeza[s]?|"
-    r"loncha[s]?)\s+(?:de\s+)?",
-    re.IGNORECASE,
-)
+    r"loncha[s]?)\s+(?:de\s+)?", re.IGNORECASE)
 
 def _clean_token(item: str) -> str:
     item = re.sub(r"^[\d½¼¾/.,\s]+", "", item)
@@ -138,42 +112,38 @@ def _clean_token(item: str) -> str:
     item = re.sub(r"\s+al\s+gusto.*$", "", item)
     return item.strip().lower()
 
-def _tokenize(ing_str: str) -> list:
-    if not ing_str:
-        return []
+def tokenize(ing_str: str) -> list:
     out = []
-    for item in ing_str.split(" | "):
+    for item in (ing_str or "").split(" | "):
         t = _clean_token(item.strip())
         if len(t) > 2 and not t.startswith("##") and not t.startswith("para"):
             out.append(t)
     return out
 
 def parse_display(ing_str: str) -> list:
-    if not ing_str:
-        return []
-    return [i.strip() for i in ing_str.split(" | ")
+    return [i.strip() for i in (ing_str or "").split(" | ")
             if i.strip() and not i.strip().startswith("##")]
 
 def time_to_min(t: str) -> int:
-    if not t:
-        return 9999
+    if not t: return 9999
     m = re.match(r"(?:(\d+)h\s*)?(?:(\d+)m)?", t)
-    return (int(m.group(1) or 0) * 60 + int(m.group(2) or 0)) if m else 9999
+    return (int(m.group(1) or 0)*60 + int(m.group(2) or 0)) if m else 9999
 
-def stars(r: float) -> str:
-    n = int(round(r))
-    return "★" * n + "☆" * (5 - n)
+def star_html(r: float) -> str:
+    n = int(round(r)); return "★"*n + "☆"*(5-n)
 
-# ── Dataset loading ────────────────────────────────────────────────────────────
+def expand_by_text(text: str, clist: list) -> list:
+    t = text.strip().lower()
+    return [c for c in clist if t in c] if t else []
+
+# ── Dataset ────────────────────────────────────────────────────────────────────
 @st.cache_data(show_spinner="Cargando recetas…")
 def load_data(path: str) -> pd.DataFrame:
     ext = Path(path).suffix.lower()
     if ext == ".csv":
-        for enc in ("utf-8", "utf-8-sig", "latin-1", "cp1252"):
-            try:
-                df = pd.read_csv(path, encoding=enc, low_memory=False); break
-            except UnicodeDecodeError:
-                continue
+        for enc in ("utf-8","utf-8-sig","latin-1","cp1252"):
+            try: df = pd.read_csv(path, encoding=enc, low_memory=False); break
+            except UnicodeDecodeError: continue
     else:
         df = pd.read_excel(path, engine="openpyxl")
     df["titulo"]           = df["titulo"].fillna("Sin título")
@@ -185,44 +155,40 @@ def load_data(path: str) -> pd.DataFrame:
     df["calorias"]         = pd.to_numeric(df["calorias"], errors="coerce").fillna(0)
     df["ingredientes"]     = df["ingredientes"].fillna("")
     df["imagen_url"]       = df.get("imagen_url", pd.Series([""] * len(df))).fillna("")
-    df["_tokens"]          = df["ingredientes"].apply(_tokenize)
+    df["_tokens"]          = df["ingredientes"].apply(tokenize)
     return df
 
 @st.cache_data(show_spinner="Indexando ingredientes…")
 def build_vocab(_df: pd.DataFrame) -> tuple:
     try:
-        from rapidfuzz import fuzz, process
-        fuzzy = True
+        from rapidfuzz import fuzz, process; fuzzy = True
     except ImportError:
         fuzzy = False
-
     counter: Counter = Counter()
     for t in _df["_tokens"]: counter.update(t)
-    vocab = sorted([k for k, v in counter.items() if v >= 3], key=lambda x: -counter[x])
-
+    vocab = sorted([k for k,v in counter.items() if v>=3], key=lambda x:-counter[x])
     if not fuzzy:
-        return {t: t for t in vocab}, sorted(vocab)
-
+        return {t:t for t in vocab}, sorted(vocab)
     cmap, assigned = {}, set()
     for term in vocab:
         if term in assigned: continue
         hits = process.extract(term, vocab, scorer=fuzz.token_sort_ratio, limit=12, score_cutoff=83)
         group = [h[0] for h in hits if h[0] not in assigned] or [term]
-        canon = max(group, key=lambda x: counter.get(x, 0))
+        canon = max(group, key=lambda x: counter.get(x,0))
         for v in group: cmap[v] = canon
         assigned.update(group)
     return cmap, sorted(set(cmap.values()))
 
 @st.cache_data(show_spinner=False)
-def canonical_token_col(_df: pd.DataFrame, _cmap: dict) -> pd.Series:
-    return _df["_tokens"].apply(lambda toks: list({_cmap.get(t, t) for t in toks}))
+def canonical_tokens(_df: pd.DataFrame, _cmap: dict) -> pd.Series:
+    return _df["_tokens"].apply(lambda toks: list({_cmap.get(t,t) for t in toks}))
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SIDEBAR — dataset upload
+# SIDEBAR — dataset + backup
 # ══════════════════════════════════════════════════════════════════════════════
 with st.sidebar:
     st.header("⚙️ Dataset")
-    uploaded = st.file_uploader("Cargar dataset", type=["xlsx", "csv"])
+    uploaded = st.file_uploader("Cargar dataset", type=["xlsx","csv"])
     dataset_path = None
     if uploaded:
         ext = Path(uploaded.name).suffix.lower()
@@ -234,192 +200,320 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("**💾 Copia de seguridad**")
-    st.caption("En Streamlit Cloud los datos se pierden al reiniciar. Exporta y restaura aquí.")
+    st.caption("En Streamlit Cloud los datos se pierden al reiniciar.")
 
-    # Export all user data as ZIP
     if st.button("📤 Exportar datos", use_container_width=True):
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-            if USERS_FILE.exists():
-                zf.write(USERS_FILE, "users.json")
-            for f in DATA_DIR.glob("user_*.json"):
-                zf.write(f, f.name)
+            if USERS_FILE.exists(): zf.write(USERS_FILE, "users.json")
+            for f in DATA_DIR.glob("user_*.json"): zf.write(f, f.name)
         buf.seek(0)
-        st.download_button(
-            "⬇️ Descargar backup.zip",
-            buf.getvalue(),
-            file_name="recetas_backup.zip",
-            mime="application/zip",
-            use_container_width=True,
-        )
+        st.download_button("⬇️ Descargar backup.zip", buf.getvalue(),
+                           "recetas_backup.zip", "application/zip",
+                           use_container_width=True)
 
-    # Restore from ZIP
-    restore_zip = st.file_uploader("📥 Restaurar desde backup", type=["zip"], key="restore_zip")
-    if restore_zip:
-        with zipfile.ZipFile(io.BytesIO(restore_zip.read())) as zf:
+    rzip = st.file_uploader("📥 Restaurar backup", type=["zip"], key="restore_zip")
+    if rzip:
+        with zipfile.ZipFile(io.BytesIO(rzip.read())) as zf:
             for name in zf.namelist():
-                target = DATA_DIR / name
-                target.write_bytes(zf.read(name))
-        # Clear caches so data reloads
-        st.session_state.pop("current_user", None)
-        st.session_state.pop("user_data", None)
-        st.success("✓ Datos restaurados correctamente.")
-        st.rerun()
+                (DATA_DIR / name).write_bytes(zf.read(name))
+        for k in ("current_user","user_data"): st.session_state.pop(k, None)
+        st.success("✓ Datos restaurados."); st.rerun()
 
 if not dataset_path:
-    for c in ["dataset.csv", "dataset.xlsx"]:
-        if Path(c).exists():
-            dataset_path = c; break
+    for c in ["dataset.csv","dataset.xlsx"]:
+        if Path(c).exists(): dataset_path = c; break
 
 # ══════════════════════════════════════════════════════════════════════════════
 # LOAD DATA
 # ══════════════════════════════════════════════════════════════════════════════
+st.title("🍽️ Planificador de Recetas")
 if not dataset_path:
-    st.title("🍽️ Planificador de Recetas")
-    st.info("👆 Sube tu dataset desde el menú lateral para empezar.")
-    st.stop()
+    st.info("👆 Sube tu dataset desde el menú lateral."); st.stop()
 
 try:
     df = load_data(dataset_path)
 except Exception as e:
-    st.error(f"Error cargando dataset: {e}"); st.stop()
+    st.error(f"Error: {e}"); st.stop()
 
 cmap, canon_list = build_vocab(df)
-df["_ctokens"] = canonical_token_col(df, cmap)
+df["_ct"] = canonical_tokens(df, cmap)
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PROFILE SELECTOR — cabecera
+# PROFILE SELECTOR
 # ══════════════════════════════════════════════════════════════════════════════
 users = load_users()
-
-hcol1, hcol2, hcol3 = st.columns([3, 2, 2])
-with hcol1:
-    st.title("🍽️ Planificador de Recetas")
-with hcol2:
+hc1, hc2, hc3 = st.columns([3, 2, 2])
+with hc2:
     user_names = list(users.keys())
-    options = user_names + ["＋ Nuevo perfil"]
-    # Restore last selection
-    default_idx = 0
-    if "current_user" in st.session_state and st.session_state.current_user in user_names:
-        default_idx = user_names.index(st.session_state.current_user)
-
-    sel = st.selectbox(
-        "👤 Perfil",
-        options=options,
-        index=default_idx,
-        label_visibility="collapsed",
-    )
-with hcol3:
+    sel = st.selectbox("👤 Perfil", user_names + ["＋ Nuevo perfil"],
+                       index=user_names.index(st.session_state.get("current_user","__none__"))
+                             if st.session_state.get("current_user") in user_names else 0,
+                       label_visibility="collapsed")
+with hc3:
     if sel != "＋ Nuevo perfil" and sel in users:
-        avatar = users[sel].get("avatar", "👤")
-        st.markdown(
-            f'<div class="profile-bar">'
-            f'<span style="font-size:1.6rem">{avatar}</span>'
-            f'<span class="profile-name">{sel}</span></div>',
-            unsafe_allow_html=True,
-        )
-        if st.button("🗑️ Eliminar perfil", key="del_user", help=f"Eliminar perfil de {sel}"):
-            st.session_state["confirm_delete_user"] = sel
+        av = users[sel].get("avatar","👤")
+        st.markdown(f'<div style="background:#f0f4ff;border-radius:8px;padding:.4rem .8rem;'
+                    f'display:flex;align-items:center;gap:8px">'
+                    f'<span style="font-size:1.5rem">{av}</span>'
+                    f'<b>{sel}</b></div>', unsafe_allow_html=True)
+        if st.button("🗑️ Eliminar perfil", key="del_user"):
+            st.session_state["confirm_delete"] = sel
 
-if st.session_state.get("confirm_delete_user") == sel and sel in users:
-    st.warning(f"⚠️ ¿Eliminar el perfil **{sel}** y todos sus datos? Esta acción no se puede deshacer.")
-    cd1, cd2, _ = st.columns([1, 1, 4])
+# Confirm delete
+if st.session_state.get("confirm_delete") in users:
+    todel = st.session_state["confirm_delete"]
+    st.warning(f"⚠️ ¿Eliminar **{todel}** y todos sus datos? No se puede deshacer.")
+    cd1, cd2, _ = st.columns([1,1,5])
     with cd1:
-        if st.button("Sí, eliminar", type="primary", key="confirm_del"):
-            del users[sel]
-            save_users(users)
-            ufile = user_file(sel)
-            if ufile.exists():
-                ufile.unlink()
-            st.session_state.pop("confirm_delete_user", None)
-            st.session_state.pop("current_user", None)
-            st.session_state.pop("user_data", None)
+        if st.button("Sí, eliminar", type="primary"):
+            del users[todel]; save_users(users)
+            f = user_file(todel)
+            if f.exists(): f.unlink()
+            for k in ("confirm_delete","current_user","user_data"): st.session_state.pop(k,None)
             st.rerun()
     with cd2:
-        if st.button("Cancelar", key="cancel_del"):
-            st.session_state.pop("confirm_delete_user", None)
-            st.rerun()
+        if st.button("Cancelar"):
+            st.session_state.pop("confirm_delete",None); st.rerun()
 
-# ── Create new profile ─────────────────────────────────────────────────────────
+# New profile form
 if sel == "＋ Nuevo perfil":
     st.markdown("### Crear perfil")
-    nc1, nc2, nc3 = st.columns([3, 2, 1])
-    with nc1:
-        new_name = st.text_input("Nombre", placeholder="Tu nombre…", key="new_name_input")
-    with nc2:
-        new_avatar = st.selectbox("Avatar", AVATARS, key="new_avatar_sel")
-    with nc3:
-        st.write("")
-        st.write("")
+    na, nb, nc = st.columns([3,2,1])
+    with na: new_name = st.text_input("Nombre", placeholder="Tu nombre…")
+    with nb: new_av   = st.selectbox("Avatar", AVATARS)
+    with nc:
+        st.write(""); st.write("")
         if st.button("Crear", type="primary"):
-            if new_name.strip():
-                nname = new_name.strip()
-                users[nname] = {"avatar": new_avatar}
-                save_users(users)
-                st.session_state.current_user = nname
-                st.session_state.user_data = load_user_data(nname)
+            nn = new_name.strip()
+            if nn:
+                users[nn] = {"avatar": new_av}; save_users(users)
+                st.session_state.current_user = nn
+                st.session_state.user_data    = load_user_data(nn)
                 st.rerun()
-            else:
-                st.warning("Escribe un nombre.")
-    st.info("Selecciona un perfil existente o crea uno nuevo para continuar.")
+            else: st.warning("Escribe un nombre.")
     st.stop()
 
-# ── Activate selected profile ──────────────────────────────────────────────────
 if not users:
-    st.info("No hay perfiles todavía. Crea el primero con el desplegable de arriba.")
-    st.stop()
+    st.info("Crea tu primer perfil con el desplegable."); st.stop()
 
-current_user = sel
-if (st.session_state.get("current_user") != current_user):
-    st.session_state.current_user = current_user
-    st.session_state.user_data    = load_user_data(current_user)
-
+if st.session_state.get("current_user") != sel:
+    st.session_state.current_user = sel
+    st.session_state.user_data    = load_user_data(sel)
 if "user_data" not in st.session_state:
-    st.session_state.user_data = load_user_data(current_user)
+    st.session_state.user_data = load_user_data(sel)
 
-st.caption(
-    f"📊 {len(df):,} recetas · {df['categoria'].nunique()} categorías · "
-    f"{len(canon_list):,} ingredientes indexados · "
-    f"Perfil: **{users[current_user].get('avatar','👤')} {current_user}**"
-)
+st.caption(f"📊 {len(df):,} recetas · {df['categoria'].nunique()} categorías · "
+           f"{len(canon_list):,} ingredientes · Perfil: **{users[sel].get('avatar','👤')} {sel}**")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# RECIPE CARD HELPER
+# ══════════════════════════════════════════════════════════════════════════════
+def recipe_card(row, kp: str):
+    titulo  = row["titulo"]
+    is_fav  = titulo in ud()["favorites"]
+    is_hide = titulo in ud()["hidden"]
+    my_rat  = ud()["ratings"].get(titulo, 0)
+    my_note = ud()["notes"].get(titulo, "")
+    my_tags = ud()["tags"].get(titulo, [])
+    base_com = int(row["comensales"]) or 1
+
+    ic, tc = st.columns([1,2])
+    with ic:
+        if row["imagen_url"]: st.image(row["imagen_url"], use_container_width=True)
+    with tc:
+        fav_icon = "⭐" if is_fav else "☆"
+        st.markdown(f"**{titulo}** {fav_icon}")
+        badges = (f'<span class="rb">{row["categoria"]}</span>'
+                  f'<span class="rb">⏱ {row["tiempo_total"]}</span>'
+                  f'<span class="rb">{row["dificultad"].replace("Dificultad ","")}</span>')
+        if my_tags:
+            for tag in my_tags:
+                badges += f'<span class="rb rb-tag">{tag}</span>'
+        st.markdown(badges, unsafe_allow_html=True)
+        if row["valoracion_media"] > 0:
+            st.markdown(f'<span class="stars">{star_html(row["valoracion_media"])}</span> '
+                        f'<span style="font-size:.7rem;color:#666">{row["valoracion_media"]:.1f} (dataset)</span>',
+                        unsafe_allow_html=True)
+        if my_rat:
+            st.markdown(f'<span class="rb rb-my">Mi valoración: {"⭐"*my_rat}</span>',
+                        unsafe_allow_html=True)
+        if row["calorias"] > 0:
+            st.caption(f"🔥 {row['calorias']:.0f} kcal · 👥 {base_com} pers.")
+
+    with st.expander("Detalle, valorar, anotar, etiquetar"):
+        # ── Acciones rápidas ────────────────────────────────────────────────
+        a1, a2, a3 = st.columns(3)
+        with a1:
+            if is_fav:
+                if st.button("★ Quitar fav", key=f"{kp}_uf_{row.name}"):
+                    ud()["favorites"].remove(titulo); save_ud(); st.rerun()
+            else:
+                if st.button("☆ Favorito", key=f"{kp}_f_{row.name}"):
+                    ud()["favorites"].append(titulo); save_ud(); st.rerun()
+        with a2:
+            if is_hide:
+                if st.button("👁 Mostrar", key=f"{kp}_uh_{row.name}"):
+                    ud()["hidden"].remove(titulo); save_ud(); st.rerun()
+            else:
+                if st.button("🚫 No mostrar", key=f"{kp}_h_{row.name}"):
+                    ud()["hidden"].append(titulo); save_ud(); st.rerun()
+        with a3:
+            # Planner quick-add
+            qday  = st.selectbox("", DIAS, key=f"{kp}_qd_{row.name}")
+            qmeal = st.selectbox("", MEAL_SLOTS, key=f"{kp}_qm_{row.name}")
+            if st.button("➕ Planner", key=f"{kp}_qa_{row.name}"):
+                ud()["planner"].setdefault(qday,[]).append({
+                    "titulo": titulo, "meal": qmeal,
+                    "comensales": base_com, "ingredientes": row["ingredientes"],
+                })
+                save_ud(); st.success("✓ Añadida")
+
+        # ── Mi valoración ───────────────────────────────────────────────────
+        new_rat = st.select_slider("Mi valoración",
+                                   options=[0,1,2,3,4,5],
+                                   value=my_rat,
+                                   format_func=lambda x: STAR_LABELS[x] if x else "Sin valorar",
+                                   key=f"{kp}_rat_{row.name}")
+        if new_rat != my_rat:
+            ud()["ratings"][titulo] = new_rat; save_ud(); st.rerun()
+
+        # ── Etiquetas ────────────────────────────────────────────────────────
+        st.markdown("**Etiquetas personales**")
+        all_existing_tags = sorted({t for tags in ud()["tags"].values() for t in tags})
+        te1, te2 = st.columns([3,1])
+        with te1:
+            new_tag = st.text_input("Nueva etiqueta", placeholder="#rapida, #bebe, #domingo…",
+                                    key=f"{kp}_tagi_{row.name}")
+        with te2:
+            st.write("")
+            if st.button("Añadir", key=f"{kp}_tagbtn_{row.name}") and new_tag.strip():
+                tag = new_tag.strip()
+                if not tag.startswith("#"): tag = "#" + tag
+                tags_r = ud()["tags"].setdefault(titulo, [])
+                if tag not in tags_r: tags_r.append(tag)
+                save_ud(); st.rerun()
+        if my_tags:
+            for tag in my_tags:
+                if st.button(f"✕ {tag}", key=f"{kp}_rmtag_{row.name}_{tag}"):
+                    ud()["tags"][titulo].remove(tag); save_ud(); st.rerun()
+
+        # ── Nota personal ────────────────────────────────────────────────────
+        new_note = st.text_area("📝 Mi nota", value=my_note,
+                                placeholder="Sin picante, doblar el ajo, usar leche de avena…",
+                                key=f"{kp}_note_{row.name}", height=70)
+        if new_note != my_note:
+            ud()["notes"][titulo] = new_note; save_ud()
+
+        # ── Escalar recetas ──────────────────────────────────────────────────
+        ings = parse_display(row["ingredientes"])
+        if ings:
+            st.markdown("**Ingredientes** (escalar por comensales)")
+            scale = st.number_input("Comensales", min_value=1, max_value=20,
+                                    value=base_com, key=f"{kp}_sc_{row.name}")
+            factor = scale / base_com if base_com else 1
+            _num_re = re.compile(r"^([\d½¼¾.,/]+)\s*(.*)")
+
+            def scale_ing(s: str, f: float) -> str:
+                m = _num_re.match(s)
+                if not m: return s
+                try:
+                    raw = m.group(1).replace(",",".")
+                    n = eval(raw.replace("½",".5").replace("¼",".25").replace("¾",".75"))
+                    scaled = n * f
+                    fmt = f"{scaled:.0f}" if scaled == int(scaled) else f"{scaled:.1f}"
+                    return f"{fmt} {m.group(2)}"
+                except Exception:
+                    return s
+
+            for ing in ings:
+                st.markdown(f"- {scale_ing(ing, factor)}")
+
+        if pd.notna(row.get("pasos")) and row["pasos"]:
+            st.markdown("**Preparación:**")
+            steps = str(row["pasos"]).split(" | ")
+            for s in steps[:6]:
+                if s.strip(): st.markdown(s.strip())
+            if len(steps) > 6: st.caption(f"… y {len(steps)-6} pasos más")
+        if row.get("url"):
+            st.markdown(f"[Ver receta completa →]({row['url']})")
+
+
+def recipe_grid(subset: pd.DataFrame, kp: str, hide_hidden: bool = True):
+    if hide_hidden:
+        hidden_set = set(ud().get("hidden", []))
+        subset = subset[~subset["titulo"].isin(hidden_set)]
+    if subset.empty:
+        st.info("No hay recetas con esos filtros."); return
+
+    skey  = f"{kp}_sort"
+    pgkey = f"{kp}_pg"
+    sc = st.selectbox("Ordenar", ["Valoración ↓","Mi valoración ↓","Tiempo ↑","Nombre A-Z","Calorías ↑"], key=skey)
+    s = subset.copy()
+    if sc == "Valoración ↓":      s = s.sort_values("valoracion_media", ascending=False)
+    elif sc == "Mi valoración ↓":
+        s["_mr"] = s["titulo"].map(lambda t: ud()["ratings"].get(t,0))
+        s = s.sort_values("_mr", ascending=False)
+    elif sc == "Tiempo ↑":
+        s["_m"] = s["tiempo_total"].apply(time_to_min); s = s.sort_values("_m")
+    elif sc == "Nombre A-Z":      s = s.sort_values("titulo")
+    elif sc == "Calorías ↑":      s = s.sort_values("calorias")
+
+    PAGE = 12
+    total_pg = max(1,(len(s)-1)//PAGE+1)
+    if pgkey not in st.session_state: st.session_state[pgkey] = 1
+    pg = min(st.session_state[pgkey], total_pg)
+    page_df = s.iloc[(pg-1)*PAGE: pg*PAGE]
+
+    cols2 = st.columns(2)
+    for idx, (_, row) in enumerate(page_df.iterrows()):
+        with cols2[idx%2]:
+            recipe_card(row, kp); st.markdown("---")
+
+    p1,p2,p3 = st.columns([1,3,1])
+    with p1:
+        if st.button("◀", key=f"{kp}_prev") and pg > 1:
+            st.session_state[pgkey] = pg-1; st.rerun()
+    with p2: st.caption(f"Pág. {pg}/{total_pg} · {len(s):,} recetas")
+    with p3:
+        if st.button("▶", key=f"{kp}_next") and pg < total_pg:
+            st.session_state[pgkey] = pg+1; st.rerun()
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TABS
 # ══════════════════════════════════════════════════════════════════════════════
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
-    ["📅 Planner", "🔍 Explorar", "⭐ Favoritos", "🧺 Mis Listas", "🛒 Compra", "🤖 IA"]
-)
+tab1,tab2,tab3,tab4,tab5,tab6,tab7 = st.tabs(
+    ["📅 Planner","🔍 Explorar","⭐ Favoritos","🧺 Mis Listas","🛒 Compra","📖 Historial","🤖 IA"])
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 1 — PLANNER
 # ══════════════════════════════════════════════════════════════════════════════
 with tab1:
     st.subheader("📅 Planificador Semanal")
-    planner = ud()["planner"]
-
-    if st.button("🗑️ Limpiar semana", key="clear_planner"):
-        ud()["planner"] = {d: [] for d in DIAS}
-        save_ud(); st.rerun()
+    pc1, pc2 = st.columns([1,4])
+    with pc1:
+        if st.button("🗑️ Limpiar semana"):
+            ud()["planner"] = {d:[] for d in DIAS}; save_ud(); st.rerun()
+    with pc2:
+        if st.button("📖 Guardar semana en historial"):
+            week_label = date.today().strftime("Semana %Y-W%V (%d/%m/%Y)")
+            ud()["history"].append({"week": week_label, "days": dict(ud()["planner"])})
+            save_ud(); st.success(f"✓ Guardada como «{week_label}»")
 
     with st.expander("➕ Añadir receta", expanded=True):
-        pa, pb, pc = st.columns([3, 2, 2])
-        with pa:
-            sp = st.text_input("Buscar receta", placeholder="paella, pollo…", key="plan_srch")
-        with pb:
-            pday  = st.selectbox("Día",    DIAS,       key="plan_day")
-        with pc:
-            pmeal = st.selectbox("Turno",  MEAL_SLOTS, key="plan_meal")
+        pa,pb,pc3 = st.columns([3,2,2])
+        with pa: sp = st.text_input("Buscar", placeholder="pollo, paella…", key="pl_srch")
+        with pb: pday  = st.selectbox("Día", DIAS, key="pl_day")
+        with pc3: pmeal = st.selectbox("Turno", MEAL_SLOTS, key="pl_meal")
         if sp:
             hits = df[df["titulo"].str.contains(sp, case=False, na=False)].head(8)
-            if hits.empty:
-                st.caption("Sin resultados.")
+            if hits.empty: st.caption("Sin resultados.")
             for _, row in hits.iterrows():
-                c1, c2 = st.columns([5, 1])
-                with c1:
-                    st.markdown(f"**{row['titulo']}** · {row['categoria']} · {row['tiempo_total']}")
+                c1,c2 = st.columns([5,1])
+                with c1: st.markdown(f"**{row['titulo']}** · {row['categoria']} · {row['tiempo_total']}")
                 with c2:
-                    if st.button("＋", key=f"pa_{row.name}"):
-                        ud()["planner"].setdefault(pday, []).append({
+                    if st.button("＋", key=f"pladd_{row.name}"):
+                        ud()["planner"].setdefault(pday,[]).append({
                             "titulo": row["titulo"], "meal": pmeal,
                             "comensales": int(row["comensales"]),
                             "ingredientes": row["ingredientes"],
@@ -430,287 +524,137 @@ with tab1:
     for i, dia in enumerate(DIAS):
         with cols7[i]:
             st.markdown(f'<div class="day-header">{dia[:3]}</div>', unsafe_allow_html=True)
-            entries = ud()["planner"].get(dia, [])
+            entries = ud()["planner"].get(dia,[])
             if not entries:
-                st.markdown('<div class="day-box"><span style="color:#aaa;font-size:0.72rem">Vacío</span></div>',
+                st.markdown('<div class="day-box"><span style="color:#aaa;font-size:.7rem">Vacío</span></div>',
                             unsafe_allow_html=True)
             else:
                 box = "<div class='day-box'>"
                 for e in entries:
-                    icon = e["meal"].split()[0]
-                    box += f'<div class="planned-recipe">{icon} {e["titulo"][:20]}…</div>'
+                    box += f'<div class="pr">{e["meal"].split()[0]} {e["titulo"][:18]}…</div>'
                 box += "</div>"
                 st.markdown(box, unsafe_allow_html=True)
-                for j, e in enumerate(entries):
+                for j,e in enumerate(entries):
                     if st.button("✕", key=f"prm_{dia}_{j}", help=e["titulo"]):
-                        ud()["planner"][dia].pop(j)
-                        save_ud(); st.rerun()
+                        ud()["planner"][dia].pop(j); save_ud(); st.rerun()
 
     total_pl = sum(len(v) for v in ud()["planner"].values())
-    if total_pl:
-        st.caption(f"**{total_pl} recetas** planificadas esta semana")
-
-# ══════════════════════════════════════════════════════════════════════════════
-# HELPER — recipe card (shared between Explorar and Favoritos)
-# ══════════════════════════════════════════════════════════════════════════════
-def recipe_card(row, card_key_prefix: str):
-    img_col, txt_col = st.columns([1, 2])
-    is_fav = row["titulo"] in ud()["favorites"]
-    with img_col:
-        if row["imagen_url"]:
-            st.image(row["imagen_url"], use_container_width=True)
-    with txt_col:
-        fav_icon = "⭐" if is_fav else "☆"
-        st.markdown(f"**{row['titulo']}** {fav_icon}")
-        st.markdown(
-            f'<span class="recipe-badge">{row["categoria"]}</span>'
-            f'<span class="recipe-badge">⏱ {row["tiempo_total"]}</span>'
-            f'<span class="recipe-badge">{row["dificultad"].replace("Dificultad ","")}</span>',
-            unsafe_allow_html=True,
-        )
-        if row["valoracion_media"] > 0:
-            st.markdown(
-                f'<span class="stars">{stars(row["valoracion_media"])}</span> '
-                f'<span style="font-size:0.72rem;color:#666">{row["valoracion_media"]:.1f}</span>',
-                unsafe_allow_html=True,
-            )
-        if row["calorias"] > 0:
-            st.caption(f"🔥 {row['calorias']:.0f} kcal · 👥 {row['comensales']} pers.")
-
-    with st.expander("Ingredientes, pasos y acciones"):
-        # Favorite toggle
-        fa, fb = st.columns(2)
-        with fa:
-            if is_fav:
-                if st.button("★ Quitar de favoritos", key=f"{card_key_prefix}_unfav_{row.name}"):
-                    ud()["favorites"].remove(row["titulo"])
-                    save_ud(); st.rerun()
-            else:
-                if st.button("☆ Añadir a favoritos", key=f"{card_key_prefix}_fav_{row.name}"):
-                    if row["titulo"] not in ud()["favorites"]:
-                        ud()["favorites"].append(row["titulo"])
-                    save_ud(); st.rerun()
-
-        ings = parse_display(row["ingredientes"])
-        if ings:
-            st.markdown("**Ingredientes:**")
-            for ing in ings:
-                st.markdown(f"- {ing}")
-        if pd.notna(row.get("pasos")) and row["pasos"]:
-            st.markdown("**Preparación:**")
-            steps = str(row["pasos"]).split(" | ")
-            for s in steps[:5]:
-                if s.strip(): st.markdown(s.strip())
-            if len(steps) > 5:
-                st.caption(f"… y {len(steps)-5} pasos más")
-        if row.get("url"):
-            st.markdown(f"[Ver receta completa →]({row['url']})")
-
-        st.markdown("**Añadir al planner:**")
-        qd, qm, qb = st.columns([2, 2, 1])
-        with qd: qday  = st.selectbox("", DIAS,       key=f"{card_key_prefix}_qd_{row.name}")
-        with qm: qmeal = st.selectbox("", MEAL_SLOTS, key=f"{card_key_prefix}_qm_{row.name}")
-        with qb:
-            if st.button("➕", key=f"{card_key_prefix}_qa_{row.name}"):
-                ud()["planner"].setdefault(qday, []).append({
-                    "titulo": row["titulo"], "meal": qmeal,
-                    "comensales": int(row["comensales"]),
-                    "ingredientes": row["ingredientes"],
-                })
-                save_ud(); st.success("✓ Añadida al planner")
-
-
-def show_recipe_grid(subset: pd.DataFrame, key_prefix: str):
-    """Display a paginated 2-col grid of recipe cards."""
-    if subset.empty:
-        st.info("No hay recetas con esos filtros.")
-        return
-
-    sort_key = f"{key_prefix}_sort"
-    page_key = f"{key_prefix}_page"
-    sort_col = st.selectbox(
-        "Ordenar por", ["Valoración ↓", "Tiempo ↑", "Nombre A-Z", "Calorías ↑"], key=sort_key
-    )
-    s = subset.copy()
-    if sort_col == "Valoración ↓":
-        s = s.sort_values("valoracion_media", ascending=False)
-    elif sort_col == "Tiempo ↑":
-        s["_m"] = s["tiempo_total"].apply(time_to_min)
-        s = s.sort_values("_m")
-    elif sort_col == "Nombre A-Z":
-        s = s.sort_values("titulo")
-    elif sort_col == "Calorías ↑":
-        s = s.sort_values("calorias")
-
-    PAGE = 12
-    total_pages = max(1, (len(s) - 1) // PAGE + 1)
-    if page_key not in st.session_state:
-        st.session_state[page_key] = 1
-    page = min(st.session_state[page_key], total_pages)
-    page_df = s.iloc[(page - 1) * PAGE: page * PAGE]
-
-    cols2 = st.columns(2)
-    for idx, (_, row) in enumerate(page_df.iterrows()):
-        with cols2[idx % 2]:
-            recipe_card(row, key_prefix)
-            st.markdown("---")
-
-    p1, p2, p3 = st.columns([1, 3, 1])
-    with p1:
-        if st.button("◀", key=f"{key_prefix}_prev") and page > 1:
-            st.session_state[page_key] = page - 1; st.rerun()
-    with p2:
-        st.caption(f"Página {page} de {total_pages} · {len(s):,} recetas")
-    with p3:
-        if st.button("▶", key=f"{key_prefix}_next") and page < total_pages:
-            st.session_state[page_key] = page + 1; st.rerun()
+    if total_pl: st.caption(f"**{total_pl} recetas** esta semana")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 2 — EXPLORAR
 # ══════════════════════════════════════════════════════════════════════════════
+def make_ing_selector(label: str, key_text: str, key_sel: str, key_list: str,
+                      key_logic: str = None) -> tuple:
+    """
+    Returns (selected_set, logic_str).
+    Accumulates selections across searches using session_state.
+    """
+    # Accumulated set stored in session state
+    acc_key = f"_acc_{key_sel}"
+    if acc_key not in st.session_state:
+        st.session_state[acc_key] = []
 
-def expand_by_text(text: str, canon_list: list) -> list:
-    """
-    Dado un texto libre (ej: "aceite"), devuelve todos los ingredientes canónicos
-    que contienen esa palabra. Útil para seleccionar de golpe "aceite de oliva",
-    "aceite de girasol", etc.
-    """
-    t = text.strip().lower()
-    if not t:
-        return []
-    return [c for c in canon_list if t in c]
+    st.markdown(f"**{label}**")
+    ra, rb, rc = st.columns([3, 2, 2])
+    with ra:
+        text = st.text_input("Buscar por palabra",
+                             placeholder="escribe 'aceite' → aparecen todos los tipos…",
+                             key=key_text)
+        suggestions = expand_by_text(text, canon_list) if text else canon_list
+        # Remove already selected from suggestions to avoid noise
+        suggestions_shown = [s for s in suggestions if s not in st.session_state[acc_key]]
+
+        new_sel = st.multiselect("Seleccionar (se acumulan)",
+                                 options=suggestions_shown,
+                                 placeholder="Elige uno o varios…",
+                                 key=key_sel)
+        # Merge new selections into accumulator
+        if new_sel:
+            for item in new_sel:
+                if item not in st.session_state[acc_key]:
+                    st.session_state[acc_key].append(item)
+
+    with rb:
+        # Import from saved list
+        my_lists = list(ud().get("ing_lists", {}).keys())
+        imp_list = st.selectbox("Importar lista",
+                                ["— ninguna —"] + my_lists, key=key_list)
+        if imp_list != "— ninguna —":
+            list_ings = ud()["ing_lists"].get(imp_list, [])
+            st.caption(f"{len(list_ings)} ingredientes")
+
+    with rc:
+        logic = "OR — alguno"
+        if key_logic:
+            logic = st.radio("Lógica", ["OR — alguno","AND — todos"],
+                             horizontal=False, key=key_logic)
+
+    # Show accumulated + clear button
+    acc = st.session_state[acc_key]
+    if acc:
+        disp = ", ".join(acc[:8]) + (f" (+{len(acc)-8} más)" if len(acc)>8 else "")
+        col_disp, col_clear = st.columns([5,1])
+        with col_disp:
+            st.caption(f"Seleccionados: **{disp}**")
+        with col_clear:
+            if st.button("✕ Limpiar", key=f"clr_{key_sel}"):
+                st.session_state[acc_key] = []; st.rerun()
+
+    # Resolve final set: accumulated + imported list (expanded)
+    final: set = set(acc)
+    if imp_list != "— ninguna —":
+        for raw in ud()["ing_lists"].get(imp_list, []):
+            final.update(expand_by_text(raw, canon_list) or [raw])
+
+    return final, logic
 
 
 with tab2:
     st.subheader("🔍 Explorar Recetas")
 
     with st.expander("🎛️ Filtros", expanded=True):
+        # Fila 1 — nombre, categorías, dificultad
+        f1a, f1b, f1c = st.columns([2,3,2])
+        with f1a:
+            search_text = st.text_input("🔎 Nombre", placeholder="paella…", key="exp_name")
+        with f1b:
+            cats_inc = st.multiselect("📂 Categorías", sorted(df["categoria"].unique()),
+                                      placeholder="Todas", key="exp_cats")
+        with f1c:
+            difs_inc = st.multiselect("💪 Dificultad", sorted(df["dificultad"].unique()),
+                                      placeholder="Todas", key="exp_difs")
 
-        # ── Fila 1: nombre, categorías (multi), dificultad (multi) ─────────────
-        r1a, r1b, r1c = st.columns([2, 3, 2])
-        with r1a:
-            search_text = st.text_input("🔎 Nombre receta", placeholder="paella, tortilla…",
-                                        key="exp_name")
-        with r1b:
-            cats_inc = st.multiselect(
-                "📂 Categorías",
-                sorted(df["categoria"].unique()),
-                placeholder="Todas — escribe para filtrar",
-                key="exp_cats",
-            )
-        with r1c:
-            difs_inc = st.multiselect(
-                "💪 Dificultad",
-                sorted(df["dificultad"].unique()),
-                placeholder="Todas",
-                key="exp_difs",
-            )
+        # Etiquetas personales
+        all_tags = sorted({t for tags in ud()["tags"].values() for t in tags})
+        if all_tags:
+            tags_filter = st.multiselect("🏷️ Mis etiquetas", all_tags,
+                                         placeholder="Filtrar por etiqueta…", key="exp_tags")
+        else:
+            tags_filter = []
 
-        # ── Fila 2: ingredientes QUIERO ────────────────────────────────────────
-        st.markdown("**✅ Ingredientes que QUIERO**")
-        ri2a, ri2b, ri2c = st.columns([3, 2, 2])
-        with ri2a:
-            # Text search that expands to matching canonical ingredients
-            inc_text = st.text_input(
-                "Buscar por palabra (selecciona uno o varios del desplegable)",
-                placeholder="escribe 'aceite' → aparecen todos los tipos…",
-                key="exp_inc_text",
-            )
-            inc_suggestions = expand_by_text(inc_text, canon_list) if inc_text else canon_list
-            ing_inc = st.multiselect(
-                "Seleccionar ingredientes",
-                options=inc_suggestions,
-                placeholder="Escribe arriba para filtrar la lista…",
-                key="exp_inc",
-            )
-        with ri2b:
-            # Quick import from a saved list
-            my_lists = list(ud().get("ing_lists", {}).keys())
-            if my_lists:
-                import_inc_list = st.selectbox(
-                    "O importar desde Mis Listas",
-                    ["— ninguna —"] + my_lists,
-                    key="exp_inc_listsel",
-                )
-                if import_inc_list != "— ninguna —":
-                    list_ings = ud()["ing_lists"].get(import_inc_list, [])
-                    st.caption(f"{len(list_ings)} ingredientes en «{import_inc_list}»")
-            else:
-                import_inc_list = "— ninguna —"
-                st.caption("(Crea listas en 🧺 Mis Listas)")
-        with ri2c:
-            logic = st.radio(
-                "Lógica incluir",
-                ["OR — alguno de estos", "AND — todos estos"],
-                horizontal=False,
-                key="exp_logic",
-            )
+        st.markdown("---")
+        inc_set, logic = make_ing_selector(
+            "✅ Ingredientes que QUIERO",
+            "exp_inc_txt", "exp_inc_sel", "exp_inc_lst", "exp_logic")
 
-        # ── Fila 3: ingredientes NO QUIERO ─────────────────────────────────────
-        st.markdown("**🚫 Ingredientes que NO quiero**")
-        re3a, re3b, _ = st.columns([3, 2, 2])
-        with re3a:
-            exc_text = st.text_input(
-                "Buscar por palabra",
-                placeholder="escribe 'gluten' → aparecen harina, pan…",
-                key="exp_exc_text",
-            )
-            exc_suggestions = expand_by_text(exc_text, canon_list) if exc_text else canon_list
-            ing_exc = st.multiselect(
-                "Seleccionar ingredientes a excluir",
-                options=exc_suggestions,
-                placeholder="Escribe arriba para filtrar…",
-                key="exp_exc",
-            )
-        with re3b:
-            my_lists = list(ud().get("ing_lists", {}).keys())
-            if my_lists:
-                import_exc_list = st.selectbox(
-                    "O importar desde Mis Listas",
-                    ["— ninguna —"] + my_lists,
-                    key="exp_exc_listsel",
-                )
-            else:
-                import_exc_list = "— ninguna —"
+        st.markdown("---")
+        exc_set, _ = make_ing_selector(
+            "🚫 Ingredientes que NO quiero",
+            "exp_exc_txt", "exp_exc_sel", "exp_exc_lst")
 
-        # ── Fila 4: tiempo y valoración ────────────────────────────────────────
-        r4a, r4b = st.columns(2)
-        with r4a:
-            max_t = st.select_slider(
-                "⏱️ Tiempo máx.",
-                [15, 30, 45, 60, 90, 120, 999], value=999,
-                format_func=lambda x: "Sin límite" if x == 999 else f"{x} min",
-                key="exp_time",
-            )
-        with r4b:
+        st.markdown("---")
+        f4a, f4b, f4c = st.columns([2,2,2])
+        with f4a:
+            max_t = st.select_slider("⏱️ Tiempo máx.",
+                                     [15,30,45,60,90,120,999], value=999,
+                                     format_func=lambda x:"Sin límite" if x==999 else f"{x}m",
+                                     key="exp_time")
+        with f4b:
             min_r = st.slider("⭐ Valoración mín.", 0.0, 5.0, 0.0, 0.5, key="exp_rat")
+        with f4c:
+            show_hidden = st.checkbox("Mostrar recetas ocultas", key="exp_show_hidden")
 
-    # ── Resolver set final de ingredientes (manual + lista importada) ──────────
-    ing_lists_data = ud().get("ing_lists", {})
-
-    # Includes: union of manually selected + imported list (expanded by text if word)
-    inc_final: set = set(ing_inc)
-    if import_inc_list != "— ninguna —":
-        for raw in ing_lists_data.get(import_inc_list, []):
-            # Each item in the list is already a canonical token; expand by substring too
-            inc_final.update(expand_by_text(raw, canon_list) or [raw])
-
-    # Excludes: union of manually selected + imported list
-    exc_final: set = set(ing_exc)
-    if import_exc_list != "— ninguna —":
-        for raw in ing_lists_data.get(import_exc_list, []):
-            exc_final.update(expand_by_text(raw, canon_list) or [raw])
-
-    # Show resolved badge counts
-    if inc_final or exc_final:
-        badge_parts = []
-        if inc_final:
-            badge_parts.append(f"✅ {len(inc_final)} ingredientes incluidos")
-        if exc_final:
-            badge_parts.append(f"🚫 {len(exc_final)} ingredientes excluidos")
-        st.caption(" · ".join(badge_parts))
-
-    # ── Aplicar filtros ────────────────────────────────────────────────────────
     filt = df.copy()
     if search_text:
         filt = filt[filt["titulo"].str.contains(search_text, case=False, na=False)]
@@ -718,20 +662,26 @@ with tab2:
         filt = filt[filt["categoria"].isin(cats_inc)]
     if difs_inc:
         filt = filt[filt["dificultad"].isin(difs_inc)]
-    if inc_final:
+    if tags_filter:
+        tag_set = set(tags_filter)
+        filt = filt[filt["titulo"].apply(
+            lambda t: bool(tag_set & set(ud()["tags"].get(t, []))))]
+    if inc_set:
         if "AND" in logic:
-            filt = filt[filt["_ctokens"].apply(lambda t: inc_final.issubset(set(t)))]
+            filt = filt[filt["_ct"].apply(lambda t: inc_set.issubset(set(t)))]
         else:
-            filt = filt[filt["_ctokens"].apply(lambda t: bool(inc_final & set(t)))]
-    if exc_final:
-        filt = filt[filt["_ctokens"].apply(lambda t: not bool(exc_final & set(t)))]
+            filt = filt[filt["_ct"].apply(lambda t: bool(inc_set & set(t)))]
+    if exc_set:
+        filt = filt[filt["_ct"].apply(lambda t: not bool(exc_set & set(t)))]
     if max_t < 999:
         filt = filt[filt["tiempo_total"].apply(time_to_min) <= max_t]
     if min_r > 0:
         filt = filt[filt["valoracion_media"] >= min_r]
 
-    st.caption(f"**{len(filt):,}** recetas encontradas")
-    show_recipe_grid(filt, "exp")
+    hidden_count = len(set(ud().get("hidden",[])) & set(filt["titulo"]))
+    st.caption(f"**{len(filt):,}** recetas encontradas"
+               + (f" · {hidden_count} ocultas" if hidden_count and not show_hidden else ""))
+    recipe_grid(filt, "exp", hide_hidden=not show_hidden)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 3 — FAVORITOS
@@ -740,231 +690,230 @@ with tab3:
     st.subheader("⭐ Favoritos")
     favs = ud()["favorites"]
     if not favs:
-        st.info("Aún no tienes recetas favoritas. Ábrelas en Explorar y pulsa ☆ Añadir a favoritos.")
+        st.info("Aún no tienes favoritas. En Explorar pulsa ☆ Favorito dentro de cada receta.")
     else:
         fav_df = df[df["titulo"].isin(favs)]
         st.caption(f"{len(fav_df)} recetas guardadas")
-        show_recipe_grid(fav_df, "fav")
+        recipe_grid(fav_df, "fav", hide_hidden=False)
+
+    # Hidden recipes management
+    hidden = ud().get("hidden",[])
+    if hidden:
+        st.markdown("---")
+        with st.expander(f"🚫 Recetas ocultas ({len(hidden)}) — click para gestionar"):
+            for t in hidden:
+                hc1, hc2 = st.columns([4,1])
+                with hc1: st.markdown(f"- {t}")
+                with hc2:
+                    if st.button("Mostrar", key=f"unhide_{t[:20]}"):
+                        ud()["hidden"].remove(t); save_ud(); st.rerun()
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 4 — MIS LISTAS DE INGREDIENTES
+# TAB 4 — MIS LISTAS
 # ══════════════════════════════════════════════════════════════════════════════
 with tab4:
     st.subheader("🧺 Mis Listas de Ingredientes")
-    st.caption(
-        "Crea listas con nombre (Nevera, Bebé, Despensa…). "
-        "Desde cada lista puedes buscar recetas que encajen exactamente o con N ingredientes extra."
-    )
 
-    ing_lists: dict = ud().get("ing_lists", {})
+    ing_lists = ud().get("ing_lists",{})
 
-    # ── Crear nueva lista ──────────────────────────────────────────────────────
     with st.expander("➕ Nueva lista", expanded=not ing_lists):
-        lna, lnb = st.columns([3, 1])
-        with lna:
-            new_list_name = st.text_input("Nombre de la lista", placeholder="Nevera, Bebé, Despensa…",
-                                          key="nl_name")
+        lna, lnb = st.columns([3,1])
+        with lna: new_list_name = st.text_input("Nombre", placeholder="Nevera, Bebé…", key="nl_nm")
         with lnb:
             st.write(""); st.write("")
-            if st.button("Crear lista", type="primary", key="nl_create"):
+            if st.button("Crear", type="primary", key="nl_cr"):
                 nm = new_list_name.strip()
                 if nm and nm not in ing_lists:
-                    ing_lists[nm] = []
-                    ud()["ing_lists"] = ing_lists
-                    save_ud(); st.rerun()
-                elif nm in ing_lists:
-                    st.warning("Ya existe una lista con ese nombre.")
-                else:
-                    st.warning("Escribe un nombre.")
+                    ing_lists[nm] = []; ud()["ing_lists"] = ing_lists; save_ud(); st.rerun()
+                elif nm in ing_lists: st.warning("Ya existe.")
+                else: st.warning("Escribe un nombre.")
 
     if not ing_lists:
-        st.info("Crea tu primera lista con el botón de arriba.")
+        st.info("Crea tu primera lista arriba.")
     else:
-      # ── Mostrar listas ───────────────────────────────────────────────────────
-      for list_name, list_ings in list(ing_lists.items()):
-        st.markdown(f'<div class="list-card"><span class="list-title">🧺 {list_name}</span></div>',
-                    unsafe_allow_html=True)
+        for list_name, list_ings in list(ing_lists.items()):
+            lk = list_name.replace(" ","_")
+            st.markdown(f'<div class="lcard"><b>🧺 {list_name}</b></div>', unsafe_allow_html=True)
 
-        lk = list_name.replace(" ", "_")
+            with st.expander(f"Editar «{list_name}»"):
+                # Text expand + multiselect
+                le1, le2 = st.columns([3,1])
+                with le1:
+                    add_txt = st.text_input("Buscar por palabra",
+                                            placeholder="'aceite' → muestra todos los tipos…",
+                                            key=f"ladd_txt_{lk}")
+                    opts = [i for i in (expand_by_text(add_txt,canon_list) if add_txt else canon_list)
+                            if i not in list_ings]
+                    new_ing = st.multiselect("Seleccionar para añadir", opts,
+                                             placeholder="Escribe para filtrar…",
+                                             key=f"ladd_sel_{lk}")
+                with le2:
+                    st.write(""); st.write("")
+                    if st.button("Añadir selección", key=f"ladd_btn_{lk}") and new_ing:
+                        ing_lists[list_name].extend([i for i in new_ing if i not in list_ings])
+                        ud()["ing_lists"] = ing_lists; save_ud(); st.rerun()
 
-        # Edit ingredients
-        with st.expander(f"Editar ingredientes de «{list_name}»"):
-            ia, ib = st.columns([4, 1])
-            with ia:
-                new_ing = st.selectbox(
-                    "Añadir ingrediente",
-                    [i for i in canon_list if i not in list_ings],
-                    key=f"li_add_{lk}",
-                    placeholder="Escribe para buscar…",
-                )
-            with ib:
-                st.write(""); st.write("")
-                if st.button("Añadir", key=f"li_addbtn_{lk}"):
-                    if new_ing and new_ing not in list_ings:
-                        ing_lists[list_name].append(new_ing)
-                        ud()["ing_lists"] = ing_lists
-                        save_ud(); st.rerun()
+                if list_ings:
+                    st.markdown("**Ingredientes actuales:**")
+                    chunks = [list_ings[i:i+4] for i in range(0,len(list_ings),4)]
+                    for chunk in chunks:
+                        rcols = st.columns(len(chunk))
+                        for ci, ing in enumerate(chunk):
+                            with rcols[ci]:
+                                if st.button(f"✕ {ing}", key=f"lrm_{lk}_{ing[:12]}",
+                                             use_container_width=True):
+                                    ing_lists[list_name].remove(ing)
+                                    ud()["ing_lists"] = ing_lists; save_ud(); st.rerun()
+                else:
+                    st.caption("Lista vacía.")
+
+                st.markdown("---")
+                if st.button(f"🗑️ Eliminar lista «{list_name}»", key=f"ldel_{lk}"):
+                    del ing_lists[list_name]; ud()["ing_lists"] = ing_lists; save_ud(); st.rerun()
 
             if list_ings:
-                st.markdown("**Ingredientes actuales:**")
-                rows = [list_ings[i:i+4] for i in range(0, len(list_ings), 4)]
-                for row_chunk in rows:
-                    rcols = st.columns(len(row_chunk))
-                    for ci, ing in enumerate(row_chunk):
-                        with rcols[ci]:
-                            if st.button(f"✕ {ing}", key=f"li_rm_{lk}_{ing[:15]}",
-                                         use_container_width=True):
-                                ing_lists[list_name].remove(ing)
-                                ud()["ing_lists"] = ing_lists
-                                save_ud(); st.rerun()
-            else:
-                st.caption("Lista vacía. Añade ingredientes arriba.")
-
+                st.markdown(f"**Buscar recetas con «{list_name}»**")
+                extra = st.slider("Ingredientes extra permitidos",
+                                  0, 10, 0, key=f"lex_{lk}", format="+%d")
+                ls = set(list_ings)
+                _ea = extra
+                matched = df[df["_ct"].apply(
+                    lambda t, _ls=ls, _e=_ea: bool(set(t)&_ls) and len(set(t)-_ls)<=_e
+                )]
+                st.caption(f"{'🎯 Exacto' if extra==0 else f'+{extra} ingrediente(s) extra'} · "
+                           f"**{len(matched):,} recetas**")
+                if not matched.empty:
+                    recipe_grid(matched, f"li_{lk}")
             st.markdown("---")
-            if st.button(f"🗑️ Eliminar lista «{list_name}»", key=f"li_del_{lk}"):
-                del ing_lists[list_name]
-                ud()["ing_lists"] = ing_lists
-                save_ud(); st.rerun()
-
-        # ── Buscar recetas con esta lista ────────────────────────────────────
-        if list_ings:
-            st.markdown(f"**Buscar recetas con «{list_name}»**")
-            extra_allowed = st.slider(
-                "Ingredientes extra permitidos (+N)",
-                min_value=0, max_value=10, value=0,
-                key=f"li_extra_{lk}",
-                help="0 = solo ingredientes de la lista · 5 = hasta 5 ingredientes extra",
-                format="+%d",
-            )
-
-            list_set = set(list_ings)
-            _ea = extra_allowed  # capture for closure
-
-            def match_recipe(ctokens: list, _ls=list_set, _ea=_ea) -> bool:
-                recipe_set = set(ctokens)
-                extras = recipe_set - _ls
-                has_any = bool(recipe_set & _ls)
-                return has_any and len(extras) <= _ea
-
-            matched = df[df["_ctokens"].apply(match_recipe)]
-            st.caption(
-                f"{'🎯 Exacto' if extra_allowed == 0 else f'±{extra_allowed} ingrediente(s) extra'} · "
-                f"**{len(matched):,} recetas** encontradas"
-            )
-
-            if not matched.empty:
-                show_recipe_grid(matched, f"li_{lk}")
-        else:
-            st.caption("Añade ingredientes a la lista para buscar recetas.")
-
-        st.markdown("---")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 5 — LISTA DE LA COMPRA
+# TAB 5 — COMPRA
 # ══════════════════════════════════════════════════════════════════════════════
 with tab5:
     st.subheader("🛒 Lista de la Compra")
     planned_entries = [e for entries in ud()["planner"].values() for e in entries]
 
     if not planned_entries:
-        st.info("Añade recetas al planner para generar la lista de la compra.")
+        st.info("Añade recetas al planner para generar la lista.")
     else:
         st.caption(f"Basado en **{len(planned_entries)} recetas** planificadas")
-
         raw_c: Counter = Counter()
         for entry in planned_entries:
-            for ing in parse_display(entry.get("ingredientes", "")):
+            for ing in parse_display(entry.get("ingredientes","")):
                 raw_c[ing.lower().strip()] += 1
 
-        shop_exc = st.multiselect(
-            "🚫 Ya lo tengo en casa",
-            sorted(raw_c.keys()),
-            placeholder="Escribe para buscar y excluir…",
-            key="shop_exc",
-        )
+        shop_exc = st.multiselect("🚫 Ya lo tengo en casa",
+                                  sorted(raw_c.keys()),
+                                  placeholder="Escribe para buscar…",
+                                  key="shop_exc")
         exc_set = {e.lower() for e in shop_exc}
-        active = {k: v for k, v in raw_c.items() if k not in exc_set}
+        active = {k:v for k,v in raw_c.items() if k not in exc_set}
 
         CAT_KW = {
-            "🥩 Carnes y proteínas": ["pollo","ternera","cerdo","carne","pechuga","muslo",
-                "bistec","tocino","bacon","jamón","chorizo","salchicha","atún","salmón",
-                "merluza","bacalao","gambas","camarones","huevo","pavo"],
-            "🥦 Verduras": ["cebolla","tomate","ajo","pimiento","zanahoria","calabacín",
-                "patata","lechuga","espinaca","acelga","champiñon","berenjena","puerro",
-                "apio","pepino","coliflor","brócoli","aguacate","maíz","judía","guisante"],
+            "🥩 Carnes y proteínas": ["pollo","ternera","cerdo","carne","pechuga","muslo","bistec",
+                "tocino","bacon","jamón","chorizo","salchicha","atún","salmón","merluza",
+                "bacalao","gambas","camarones","huevo","pavo"],
+            "🥦 Verduras": ["cebolla","tomate","ajo","pimiento","zanahoria","calabacín","patata",
+                "lechuga","espinaca","acelga","champiñon","berenjena","puerro","apio",
+                "pepino","coliflor","brócoli","aguacate","maíz","judía","guisante"],
             "🍋 Frutas": ["limón","naranja","manzana","plátano","fresa","mango","piña",
                 "uva","kiwi","melocotón","pera","ciruela","pomelo"],
             "🥛 Lácteos": ["leche","nata","mantequilla","queso","yogur","crema",
                 "mozzarella","parmesano"],
-            "🌾 Cereales y legumbres": ["harina","arroz","pasta","macarrón","espagueti",
-                "pan","avena","lenteja","garbanzo","frijol","alubia","quinoa"],
-            "🫙 Aceites y salsas": ["aceite","vinagre","soja","mayonesa","ketchup",
-                "salsa","caldo","vino","mostaza"],
-            "🧂 Especias": ["sal","pimienta","orégano","tomillo","romero","laurel",
-                "comino","pimentón","curry","canela","perejil","cilantro","albahaca",
-                "azafrán","nuez moscada","azúcar"],
+            "🌾 Cereales y legumbres": ["harina","arroz","pasta","macarrón","espagueti","pan",
+                "avena","lenteja","garbanzo","frijol","alubia","quinoa"],
+            "🫙 Aceites y salsas": ["aceite","vinagre","soja","mayonesa","ketchup","salsa",
+                "caldo","vino","mostaza"],
+            "🧂 Especias": ["sal","pimienta","orégano","tomillo","romero","laurel","comino",
+                "pimentón","curry","canela","perejil","cilantro","albahaca","azafrán",
+                "nuez moscada","azúcar"],
         }
 
         def cat_of(i):
             il = i.lower()
-            for c, kws in CAT_KW.items():
+            for c,kws in CAT_KW.items():
                 if any(k in il for k in kws): return c
             return "🍬 Otros"
 
         by_cat: dict = {}
-        for ing, cnt in sorted(active.items()):
-            by_cat.setdefault(cat_of(ing), []).append((ing, cnt))
+        for ing,cnt in sorted(active.items()):
+            by_cat.setdefault(cat_of(ing),[]).append((ing,cnt))
 
         export = ["LISTA DE LA COMPRA","="*30]
-        for cat, items in by_cat.items():
+        for cat,items in by_cat.items():
             export.append(f"\n{cat}")
-            for ing, cnt in items:
+            for ing,cnt in items:
                 export.append(f"  ☐ {'('+str(cnt)+'x) ' if cnt>1 else ''}{ing}")
-
         st.download_button("📥 Exportar .txt", "\n".join(export),
                            "lista_compra.txt", "text/plain")
 
-        if "chk" not in st.session_state:
-            st.session_state.chk = set()
-
+        if "chk" not in st.session_state: st.session_state.chk = set()
         total_i = sum(len(v) for v in by_cat.values())
         done_i  = len([i for i in st.session_state.chk if i in active])
-        st.progress(done_i / total_i if total_i else 0,
+        st.progress(done_i/total_i if total_i else 0,
                     text=f"Completado: {done_i}/{total_i}")
-        if st.button("↺ Desmarcar todo", key="shop_reset"):
-            st.session_state.chk = set(); st.rerun()
+        if st.button("↺ Desmarcar todo"): st.session_state.chk = set(); st.rerun()
 
-        for cat, items in by_cat.items():
+        for cat,items in by_cat.items():
             if not items: continue
-            st.markdown(f'<div class="shop-cat">{cat}</div>', unsafe_allow_html=True)
-            for ing, cnt in items:
-                prefix = f"({cnt}x) " if cnt > 1 else ""
+            st.markdown(f'<div class="shopcat">{cat}</div>', unsafe_allow_html=True)
+            for ing,cnt in items:
+                prefix = f"({cnt}x) " if cnt>1 else ""
                 chk = st.checkbox(f"{prefix}{ing}", value=ing in st.session_state.chk,
                                   key=f"chk_{ing[:50]}")
                 if chk: st.session_state.chk.add(ing)
                 else:   st.session_state.chk.discard(ing)
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 6 — IA
+# TAB 6 — HISTORIAL
 # ══════════════════════════════════════════════════════════════════════════════
 with tab6:
+    st.subheader("📖 Historial de Menús")
+    history = ud().get("history",[])
+    if not history:
+        st.info("Guarda la semana actual desde el Planner con 'Guardar semana en historial'.")
+    else:
+        for i, entry in enumerate(reversed(history)):
+            idx = len(history) - 1 - i
+            with st.expander(f"📅 {entry['week']}"):
+                days = entry.get("days",{})
+                cols7 = st.columns(7)
+                for di, dia in enumerate(DIAS):
+                    with cols7[di]:
+                        st.markdown(f"**{dia[:3]}**")
+                        for e in days.get(dia,[]):
+                            st.markdown(f'<div class="pr">{e["meal"].split()[0]} {e["titulo"][:20]}…</div>',
+                                        unsafe_allow_html=True)
+
+                hb1, hb2 = st.columns([2,2])
+                with hb1:
+                    if st.button("♻️ Cargar esta semana en el planner", key=f"hload_{idx}"):
+                        ud()["planner"] = {d: list(days.get(d,[])) for d in DIAS}
+                        save_ud(); st.success("✓ Semana cargada en el planner"); st.rerun()
+                with hb2:
+                    if st.button("🗑️ Borrar del historial", key=f"hdel_{idx}"):
+                        ud()["history"].pop(idx); save_ud(); st.rerun()
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 7 — IA
+# ══════════════════════════════════════════════════════════════════════════════
+with tab7:
     st.subheader("🤖 Sugerencias con IA")
     st.caption("Powered by **Groq** (gratuito) · Llama 3.3 70B · Busca en tu dataset real")
 
-    try:
-        gkey = st.secrets.get("GROQ_API_KEY", "")
-    except Exception:
-        gkey = ""
+    try:    gkey = st.secrets.get("GROQ_API_KEY","")
+    except: gkey = ""
     api_key = gkey or st.text_input("API Key de Groq", type="password",
                                      help="Gratis en console.groq.com")
     if not api_key:
-        st.info("1. Crea cuenta en [console.groq.com](https://console.groq.com)\n"
-                "2. Menú → **API Keys** → **Create API Key**\n"
+        st.info("1. [console.groq.com](https://console.groq.com) → crea cuenta\n"
+                "2. API Keys → Create API Key\n"
                 "3. Pégala arriba\n\n"
-                "Para no introducirla cada vez: `.streamlit/secrets.toml` → `GROQ_API_KEY='gsk_...'`")
+                "Para no introducirla: `.streamlit/secrets.toml` → `GROQ_API_KEY='gsk_...'`")
 
     mode = st.radio("¿Qué quieres hacer?", [
         "🥬 Tengo estos ingredientes, ¿qué cocino?",
+        "🏠 ¿Qué cocino con mis listas? (sin IA)",
         "📅 Generar menú semanal equilibrado",
         "🔄 Sustituir un ingrediente",
     ])
@@ -972,7 +921,29 @@ with tab6:
     if mode == "🥬 Tengo estos ingredientes, ¿qué cocino?":
         user_input = st.text_area("¿Qué tienes en casa?",
                                   placeholder="pollo, patatas, cebolla…", height=70)
-        extra = st.text_input("Restricciones (opcional)", placeholder="sin gluten, vegetariano…")
+        extra = st.text_input("Restricciones (opcional)", placeholder="sin gluten…")
+
+    elif mode == "🏠 ¿Qué cocino con mis listas? (sin IA)":
+        st.caption("Busca directamente en el dataset sin gastar tokens de IA.")
+        my_lists = list(ud().get("ing_lists",{}).keys())
+        if not my_lists:
+            st.info("Crea primero una lista en 🧺 Mis Listas.")
+        else:
+            chosen_lists = st.multiselect("Usar ingredientes de estas listas", my_lists)
+            extra_allow  = st.slider("Ingredientes extra permitidos", 0, 10, 2, format="+%d")
+            if chosen_lists:
+                combined = set()
+                for ln in chosen_lists:
+                    combined.update(ud()["ing_lists"].get(ln,[]))
+                _ea2 = extra_allow
+                no_ai = df[df["_ct"].apply(
+                    lambda t, _ls=combined, _e=_ea2:
+                        bool(set(t)&_ls) and len(set(t)-_ls)<=_e
+                )]
+                st.caption(f"**{len(no_ai):,} recetas** con esos ingredientes (+{extra_allow} extra)")
+                recipe_grid(no_ai, "noai")
+        mode = None  # skip AI button
+
     elif mode == "📅 Generar menú semanal equilibrado":
         user_input = ""
         extra = st.text_area("Preferencias", placeholder="4 personas, sin pescado…", height=70)
@@ -980,30 +951,28 @@ with tab6:
         user_input = st.text_input("Ingrediente a sustituir", placeholder="nata líquida")
         extra = st.text_input("Contexto", placeholder="carbonara, sin lactosa")
 
-    if st.button("✨ Preguntar a la IA", type="primary", disabled=not api_key):
+    if mode and st.button("✨ Preguntar a la IA", type="primary", disabled=not api_key):
         def search_ds(kws, max_r=40):
-            if not kws: return df.sample(min(max_r, len(df)))
+            if not kws: return df.sample(min(max_r,len(df)))
             mask = pd.Series([False]*len(df), index=df.index)
             for kw in kws:
                 kw = kw.strip().lower()
-                if len(kw) < 2: continue
-                mask |= df["_ctokens"].apply(lambda t: any(kw in x for x in t))
+                if len(kw)<2: continue
+                mask |= df["_ct"].apply(lambda t: any(kw in x for x in t))
                 mask |= df["titulo"].str.lower().str.contains(kw, na=False)
             r = df[mask]
-            return r.head(max_r) if not r.empty else df.sample(min(max_r, len(df)))
+            return r.head(max_r) if not r.empty else df.sample(min(max_r,len(df)))
 
         def to_txt(sub, mx=25):
-            lines = []
-            for _, r in sub.head(mx).iterrows():
-                ing = str(r.get("ingredientes", "") or "")[:160]
-                lines.append(
-                    f"- {r.get('titulo','?')} | {r.get('categoria','?')} | "
-                    f"{r.get('tiempo_total','?')} | Ingredientes: {ing}"
-                )
+            lines=[]
+            for _,r in sub.head(mx).iterrows():
+                ing = str(r.get("ingredientes","") or "")[:160]
+                lines.append(f"- {r.get('titulo','?')} | {r.get('categoria','?')} | "
+                             f"{r.get('tiempo_total','?')} | Ingredientes: {ing}")
             return "\n".join(lines)
 
         if mode == "🥬 Tengo estos ingredientes, ¿qué cocino?":
-            kws = [w.strip() for w in user_input.replace(",", " ").split() if len(w.strip()) > 2]
+            kws = [w.strip() for w in user_input.replace(","," ").split() if len(w.strip())>2]
             cands = search_ds(kws)
             prompt = (
                 "Eres un asistente de cocina. Tu ÚNICA fuente son estas recetas reales. "
@@ -1015,22 +984,19 @@ with tab6:
             )
         elif mode == "📅 Generar menú semanal equilibrado":
             muestra = pd.concat([
-                g.sample(min(6, len(g)))
-                for _, g in df.groupby("categoria", group_keys=False)
+                g.sample(min(6,len(g))) for _,g in df.groupby("categoria", group_keys=False)
             ]).reset_index(drop=True)
             prompt = (
                 "Eres nutricionista y chef. SOLO puedes usar estas recetas reales. "
                 "NO inventes recetas fuera de la lista.\n\n"
-                f"RECETAS:\n{to_txt(muestra, 50)}\n\n"
+                f"RECETAS:\n{to_txt(muestra,50)}\n\n"
                 f"Preferencias: {extra or 'ninguna'}.\n"
                 "Diseña menú lunes-domingo (comida+cena) con nombres exactos. "
-                "Nota final sobre equilibrio nutricional. Responde en español."
+                "Variado entre categorías. Nota final sobre equilibrio nutricional. Español."
             )
         else:
-            prompt = (
-                f"Quiero sustituir '{user_input}' en: {extra or 'una receta'}.\n"
-                "Sugiere 3 sustitutos: nombre, proporción, efecto en sabor/textura. Español."
-            )
+            prompt = (f"Quiero sustituir '{user_input}' en: {extra or 'una receta'}.\n"
+                      "Sugiere 3 sustitutos: nombre, proporción, efecto. Español.")
 
         try:
             from groq import Groq
@@ -1038,17 +1004,12 @@ with tab6:
             with st.spinner("Consultando IA…"):
                 resp = client.chat.completions.create(
                     model="llama-3.3-70b-versatile",
-                    messages=[{"role": "user", "content": prompt}],
-                    max_tokens=1200, temperature=0.3,
-                )
+                    messages=[{"role":"user","content":prompt}],
+                    max_tokens=1200, temperature=0.3)
             st.markdown("### 💬 Respuesta")
             st.markdown(resp.choices[0].message.content)
-            if mode != "🔄 Sustituir un ingrediente":
-                n = len(cands) if "cands" in dir() else len(muestra)
-                st.caption(f"🔍 Analizadas {n} recetas reales de tu dataset.")
-        except ImportError:
-            st.error("`pip install groq`")
-        except Exception as e:
-            st.error(f"Error Groq: {e}")
+            if "cands" in dir(): st.caption(f"🔍 Analizadas {len(cands)} recetas del dataset.")
+        except ImportError: st.error("`pip install groq`")
+        except Exception as e: st.error(f"Error Groq: {e}")
 
-    st.caption("Tu API key no se almacena. Para uso frecuente: `.streamlit/secrets.toml`.")
+    if mode: st.caption("Tu API key no se almacena. `.streamlit/secrets.toml` para uso frecuente.")
