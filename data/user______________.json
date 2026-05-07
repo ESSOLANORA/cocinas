@@ -40,7 +40,14 @@
         "ingredientes": "250 gramos de Tallarines | 4 cucharadas soperas de Salsa de soja | 2 unidades de Zanahoria | 1 unidad de Cebolla | 1 unidad de Pimiento verde | 30 gramos de Gambas frescas | 1 pizca de Sal | 2 cucharadas soperas de Aceite de oliva | 1 pizca de Jengibre fresco | 30 gramos de Repollo"
       }
     ],
-    "Miércoles": [],
+    "Miércoles": [
+      {
+        "titulo": "Receta de Espaguetis con gambas y almejas",
+        "meal": "🌅 Desayuno",
+        "comensales": 4,
+        "ingredientes": "250 gramos de gamba fresca | 300 gramos de almejas frescas | 1 rama de perejil fresco | 2 dientes de ajo | 1 paquete de espaguetis | 2 pellizcos de eneldo seco | 1 cucharadita de harina de maíz | 1 litro de agua | 3 cucharadas soperas de aceite de girasol | 2 hojas de laurel"
+      }
+    ],
     "Jueves": [],
     "Viernes": [
       {
@@ -66,7 +73,8 @@
     "Receta de Pechugas en Salsa de Mango"
   ],
   "hidden": [
-    "Receta de Tacos de carne al vino tinto"
+    "Receta de Tacos de carne al vino tinto",
+    "Receta de Omelette al microondas"
   ],
   "ratings": {
     "Receta de Aeropuerto chifa": 5
