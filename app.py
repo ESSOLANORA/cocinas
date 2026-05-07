@@ -957,28 +957,68 @@ with tab2:
         with r1a:
             search_text = st.text_input("🔎 Nombre", placeholder="paella…", key="exp_name")
         with r1b:
-            cats_inc_raw = st.multiselect("📂 Categoría", all_cats_wc,
-                                          placeholder="Todas", key="exp_cats")
-            cats_inc = [re.sub(r"\s*\(\d+\)$","",v).strip() for v in cats_inc_raw]
+            # Plain options — counts shown as caption below
+            all_cats_plain = sorted(df["categoria"].unique().tolist())
+            cats_inc = st.multiselect("📂 Categoría", all_cats_plain,
+                                      placeholder="Todas", key="exp_cats")
+            # Show counts for currently visible options
+            if not cats_inc:
+                vc_cats = base_cats["categoria"].value_counts()
+                top_cats = [(v, vc_cats.get(v,0)) for v in all_cats_plain if vc_cats.get(v,0)>0]
+                if top_cats:
+                    st.caption(" · ".join(f"{v} ({n})" for v,n in sorted(top_cats, key=lambda x:-x[1])[:5]) + "…")
         with r1c:
-            subcats_inc_raw = st.multiselect("📁 Subcategoría", all_subcats_wc,
-                                             placeholder="Todas", key="exp_subcats")
-            subcats_inc = [re.sub(r"\s*\(\d+\)$","",v).strip() for v in subcats_inc_raw]
+            # Subcategories: options filtered by selected cats (bidirectional)
+            if cats_inc:
+                avail_subcats = sorted(base_subcats["subcategoria"].dropna().unique().tolist()) if "subcategoria" in base_subcats.columns else []
+            else:
+                avail_subcats = sorted(df["subcategoria"].dropna().unique().tolist()) if "subcategoria" in df.columns else []
+            # Keep previously selected values that are still valid
+            prev_subcats = [s for s in st.session_state.get("exp_subcats",[]) if s in avail_subcats]
+            if prev_subcats != st.session_state.get("exp_subcats",[]):
+                st.session_state["exp_subcats"] = prev_subcats
+            subcats_inc = st.multiselect("📁 Subcategoría", avail_subcats,
+                                         placeholder="Todas", key="exp_subcats")
+            if not subcats_inc and avail_subcats:
+                vc_sc = base_subcats["subcategoria"].value_counts() if "subcategoria" in base_subcats.columns else {}
+                top_sc = sorted([(v, vc_sc.get(v,0)) for v in avail_subcats if vc_sc.get(v,0)>0], key=lambda x:-x[1])[:4]
+                if top_sc:
+                    st.caption(" · ".join(f"{v} ({n})" for v,n in top_sc) + "…")
 
         # Row 2 — tipo cocina, dificultad, etiquetas
         r2a, r2b, r2c = st.columns([2, 2, 2])
         with r2a:
-            tipo_inc_raw = st.multiselect("🍴 Tipo cocina", all_tipos_wc,
+            if "tipo_cocina" in df.columns:
+                avail_tipos = sorted(base_tipos["tipo_cocina"].dropna().unique().tolist()) if "tipo_cocina" in base_tipos.columns else []
+                prev_tipos = [t for t in st.session_state.get("exp_tipo",[]) if t in avail_tipos]
+                if prev_tipos != st.session_state.get("exp_tipo",[]):
+                    st.session_state["exp_tipo"] = prev_tipos
+                tipo_inc = st.multiselect("🍴 Tipo cocina", avail_tipos,
                                           placeholder="Todos", key="exp_tipo")
-            tipo_inc = [re.sub(r"\s*\(\d+\)$","",v).strip() for v in tipo_inc_raw]
+                if not tipo_inc and avail_tipos:
+                    vc_t = base_tipos["tipo_cocina"].value_counts()
+                    top_t = sorted([(v, vc_t.get(v,0)) for v in avail_tipos if vc_t.get(v,0)>0], key=lambda x:-x[1])[:4]
+                    if top_t:
+                        st.caption(" · ".join(f"{v} ({n})" for v,n in top_t))
+            else:
+                tipo_inc = []
         with r2b:
-            difs_inc_raw = st.multiselect("💪 Dificultad", all_difs_wc,
-                                          placeholder="Todas", key="exp_difs")
-            difs_inc = [re.sub(r"\s*\(\d+\)$","",v).strip() for v in difs_inc_raw]
+            all_difs_plain = sorted(df["dificultad"].unique().tolist())
+            difs_inc = st.multiselect("💪 Dificultad", all_difs_plain,
+                                       placeholder="Todas", key="exp_difs")
+            if not difs_inc:
+                vc_d = base_difs["dificultad"].value_counts()
+                st.caption(" · ".join(f"{v} ({vc_d.get(v,0)})" for v in all_difs_plain if vc_d.get(v,0)>0))
         with r2c:
             all_tags = sorted({t for tags in ud()["tags"].values() for t in tags})
             tags_filter = st.multiselect("🏷️ Mis etiquetas", all_tags,
                                           placeholder="Todas", key="exp_tags") if all_tags else []
+        
+        # Alias for save/restore compatibility
+        cats_inc_raw = cats_inc
+        subcats_inc_raw = subcats_inc
+        tipo_inc_raw = tipo_inc
+        difs_inc_raw = difs_inc
 
         st.markdown("---")
 
@@ -1026,9 +1066,9 @@ with tab2:
         with sv2:
             if st.button("💾 Guardar", key="exp_save_btn") and save_name.strip():
                 snap = {
-                    "exp_name": search_text, "exp_cats": cats_inc_raw,
-                    "exp_subcats": subcats_inc_raw, "exp_tipo": tipo_inc_raw,
-                    "exp_difs": difs_inc_raw, "exp_time": max_t, "exp_rat": min_r,
+                    "exp_name": search_text, "exp_cats": cats_inc,
+                    "exp_subcats": subcats_inc, "exp_tipo": tipo_inc,
+                    "exp_difs": difs_inc, "exp_time": max_t, "exp_rat": min_r,
                     "_acc_inc":   list(st.session_state.get("_acc_inc", [])),
                     "_acc_exc":   list(st.session_state.get("_acc_exc", [])),
                     "_acc_chars": list(st.session_state.get("_acc_chars", [])),
