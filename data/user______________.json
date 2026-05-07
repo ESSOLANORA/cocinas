@@ -11,17 +11,33 @@
     "Martes": [],
     "Miércoles": [],
     "Jueves": [],
-    "Viernes": [],
+    "Viernes": [
+      {
+        "titulo": "Receta de Cordero guisado con guisantes",
+        "meal": "🌅 Desayuno",
+        "comensales": 4,
+        "ingredientes": "8 trozos de Cordero (chuletas, mediana, cuello, etc) | 2 unidades de Cebollas | 1 unidad de Pimiento rojo | 200 gramos de Champiñones | 40 gramos de Harina | 1 bote de Maíz | 150 gramos de Guisantes congelados | 1 vaso de Agua | ½ vaso pequeño de Aceite de oliva | 1 cubilete de Caldo | ½ cucharadita de Pimienta negra molida | 1 cucharadita de Sal"
+      }
+    ],
     "Sábado": [],
     "Domingo": []
   },
   "history": [],
   "favorites": [
     "Receta de Paella valenciana de pollo y verduras",
-    "Receta de Potaje de vigilia de la abuela"
+    "Receta de Potaje de vigilia de la abuela",
+    "Receta de Cordero guisado con guisantes",
+    "Receta de Aeropuerto chifa",
+    "Receta de Alitas en salsa de mango",
+    "Receta de Pechugas de pollo con ajo asado",
+    "Receta de Pechugas de pollo en salsa de setas"
   ],
-  "hidden": [],
-  "ratings": {},
+  "hidden": [
+    "Receta de Tacos de carne al vino tinto"
+  ],
+  "ratings": {
+    "Receta de Aeropuerto chifa": 5
+  },
   "notes": {},
   "tags": {},
   "ing_lists": {
