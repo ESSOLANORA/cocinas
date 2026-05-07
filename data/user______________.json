@@ -12,9 +12,34 @@
         "meal": "🌅 Desayuno",
         "comensales": 2,
         "ingredientes": "150 gramos de Pulpo | 100 gramos de Gambas | 250 gramos de Arroz arborio | 1 pizca de Azafrán | 1 pizca de Paprika | 50 gramos de Cebolla | 50 gramos de Pimiento rojo | 2 dientes de Ajo | 3 cucharadas soperas de Pasta de tomate | 30 mililitros de Aceite de oliva | 1 pizca de Sal | 1 pizca de Pimienta"
+      },
+      {
+        "titulo": "Receta de Pechugas en Salsa de Mango",
+        "meal": "☀️ Comida",
+        "comensales": 4,
+        "ingredientes": "200 gr Mango | 40 gr azúcar | Vinagre de manzana | 10 gr ChiLe habanero | 1 cebolla morada | Sal | 1/2 kg de pechuga de pollo aplanada | 100 ml aceite"
       }
     ],
-    "Martes": [],
+    "Martes": [
+      {
+        "titulo": "Receta de Coca de tomate y pimiento",
+        "meal": "🌅 Desayuno",
+        "comensales": 4,
+        "ingredientes": "125 mililitros de cerveza | 125 mililitros de aceite de oliva suave | 300 granos de harina | 1 pizca de sal | 1 pimiento rojo | 1 pimiento verde | 4 tomates maduros | 2 latas de atún | 1 cucharada sopera de piñones"
+      },
+      {
+        "titulo": "Receta de Lomo frito con pimientos",
+        "meal": "☀️ Comida",
+        "comensales": 2,
+        "ingredientes": "300 gramos de Lomo de cerdo | 4 unidades de Pimiento verde | ½ unidad de Pimiento rojo | 4 dientes de Ajo | 1 pizca de Sal | 1 pizca de Pimienta negra molida | 8 cucharadas soperas de Aceite de oliva | 1 copa de Vino blanco"
+      },
+      {
+        "titulo": "Receta de Tallarines chinos con gambas",
+        "meal": "🌙 Cena",
+        "comensales": 2,
+        "ingredientes": "250 gramos de Tallarines | 4 cucharadas soperas de Salsa de soja | 2 unidades de Zanahoria | 1 unidad de Cebolla | 1 unidad de Pimiento verde | 30 gramos de Gambas frescas | 1 pizca de Sal | 2 cucharadas soperas de Aceite de oliva | 1 pizca de Jengibre fresco | 30 gramos de Repollo"
+      }
+    ],
     "Miércoles": [],
     "Jueves": [],
     "Viernes": [
@@ -37,7 +62,8 @@
     "Receta de Alitas en salsa de mango",
     "Receta de Pechugas de pollo con ajo asado",
     "Receta de Pechugas de pollo en salsa de setas",
-    "Receta de Arroz caldoso con pulpo y gambas"
+    "Receta de Arroz caldoso con pulpo y gambas",
+    "Receta de Pechugas en Salsa de Mango"
   ],
   "hidden": [
     "Receta de Tacos de carne al vino tinto"
