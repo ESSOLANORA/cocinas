@@ -6,6 +6,12 @@
         "meal": "🌙 Cena",
         "comensales": 4,
         "ingredientes": "350 gramos de garbanzos | 200 gramos de espinacas | 4 trozos de bacalao | 1 cebolla | 2 dientes de ajos | 2 huevos | 1 cucharada postre de pimentón dulce | 2 patatas | 1 chorro de aceite de oliva | 1 pizca de sal"
+      },
+      {
+        "titulo": "Receta de Arroz caldoso con pulpo y gambas",
+        "meal": "🌅 Desayuno",
+        "comensales": 2,
+        "ingredientes": "150 gramos de Pulpo | 100 gramos de Gambas | 250 gramos de Arroz arborio | 1 pizca de Azafrán | 1 pizca de Paprika | 50 gramos de Cebolla | 50 gramos de Pimiento rojo | 2 dientes de Ajo | 3 cucharadas soperas de Pasta de tomate | 30 mililitros de Aceite de oliva | 1 pizca de Sal | 1 pizca de Pimienta"
       }
     ],
     "Martes": [],
@@ -30,7 +36,8 @@
     "Receta de Aeropuerto chifa",
     "Receta de Alitas en salsa de mango",
     "Receta de Pechugas de pollo con ajo asado",
-    "Receta de Pechugas de pollo en salsa de setas"
+    "Receta de Pechugas de pollo en salsa de setas",
+    "Receta de Arroz caldoso con pulpo y gambas"
   ],
   "hidden": [
     "Receta de Tacos de carne al vino tinto"
@@ -993,5 +1000,6 @@
       "cacao puro en polvo",
       "cacao puro sin azúcar"
     ]
-  }
+  },
+  "saved_searches": {}
 }
